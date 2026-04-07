@@ -9,7 +9,8 @@ from typing import Dict, Optional
 from app.config import settings
 
 
-client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+def _get_client():
+    return anthropic.Anthropic(api_key=settings.anthropic_api_key)
 
 
 def _format_candles_table(candles: list, label: str) -> str:
@@ -156,7 +157,7 @@ def run_analysis(snapshot: Dict) -> Dict:
     """Main entry: build prompt → call Claude → parse → return structured result."""
     prompt = build_prompt(snapshot)
 
-    message = client.messages.create(
+    message = _get_client().messages.create(
         model=settings.claude_model,
         max_tokens=2048,
         messages=[{"role": "user", "content": prompt}],
