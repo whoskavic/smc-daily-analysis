@@ -33,14 +33,14 @@ def get_latest_analyses(db: Session = Depends(get_db)):
     return results
 
 
-@router.get("/{symbol}")
+@router.get("/history")
 def get_analysis_for_symbol(
     symbol: str,
     limit: int = 7,
     db: Session = Depends(get_db),
 ):
-    """Get recent analyses for a symbol (URL-encoded, e.g. BTC%2FUSDT)."""
-    symbol = symbol.replace("%2F", "/").upper()
+    """Get recent analyses for a symbol. GET /api/analysis/history?symbol=BTC/USDT"""
+    symbol = symbol.upper()
     records = (
         db.query(DailyAnalysis)
         .filter_by(symbol=symbol)
@@ -68,10 +68,10 @@ async def trigger_analysis(
     return {"status": "queued", "symbol": symbol}
 
 
-@router.get("/ticker/{symbol}")
+@router.get("/ticker")
 def get_ticker(symbol: str):
-    """Live price ticker for a symbol."""
-    symbol = symbol.replace("%2F", "/").upper()
+    """Live price ticker. GET /api/analysis/ticker?symbol=BTC/USDT"""
+    symbol = symbol.upper()
     try:
         return fetch_ticker(symbol)
     except Exception as e:
