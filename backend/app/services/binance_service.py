@@ -66,19 +66,31 @@ def fetch_fear_greed() -> Optional[int]:
 
 
 def fetch_ticker(symbol: str) -> Dict:
-    """Current price + 24h stats."""
-    exchange = _get_exchange()
-    ticker = exchange.fetch_ticker(symbol)
-    return {
-        "symbol": symbol,
-        "last": ticker.get("last"),
-        "bid": ticker.get("bid"),
-        "ask": ticker.get("ask"),
-        "high": ticker.get("high"),
-        "low": ticker.get("low"),
-        "volume": ticker.get("baseVolume"),
-        "change_pct": ticker.get("percentage"),
-    }
+    """Current price + 24h stats via Binance public REST — no ccxt market loading needed."""
+    # Convert ccxt format BTC/USDT → BTCUSDT
+    binance_symbol = symbol.replace("/", "")
+
+    # Try futures first, fall back to spot
+    for base_url in [
+        f"https://fapi.binance.com/fapi/v1/ticker/24hr?symbol={binance_symbol}",
+        f"https://api.binance.com/api/v3/ticker/24hr?symbol={binance_symbol}",
+    ]:
+        try:
+            resp = requests.get(base_url, timeout=10)
+            resp.raise_for_status()
+            t = resp.json()
+            return {
+                "symbol": symbol,
+                "last": float(t.get("lastPrice", 0)),
+                "high": float(t.get("highPrice", 0)),
+                "low": float(t.get("lowPrice", 0)),
+                "volume": float(t.get("volume", 0)),
+                "change_pct": float(t.get("priceChangePercent", 0)),
+            }
+        except Exception:
+            continue
+
+    raise Exception(f"Could not fetch ticker for {symbol} from Binance")
 
 
 def fetch_market_snapshot(symbol: str) -> Dict:
