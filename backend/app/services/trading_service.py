@@ -7,10 +7,12 @@ import hmac
 import time
 import requests
 import logging
+import urllib3
 from typing import Dict, List, Optional
 from urllib.parse import urlencode
 from app.config import settings
 
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 logger = logging.getLogger(__name__)
 
 FAPI_BASE = "https://fapi.binance.com"
@@ -33,7 +35,7 @@ def _get(path: str, params: dict = None) -> dict:
     params = params or {}
     params["timestamp"] = int(time.time() * 1000)
     params["signature"] = _sign(params)
-    resp = requests.get(f"{FAPI_BASE}{path}", params=params, headers=_headers(), timeout=10)
+    resp = requests.get(f"{FAPI_BASE}{path}", params=params, headers=_headers(), timeout=10, verify=False)
     resp.raise_for_status()
     return resp.json()
 
@@ -42,7 +44,16 @@ def _post(path: str, params: dict = None) -> dict:
     params = params or {}
     params["timestamp"] = int(time.time() * 1000)
     params["signature"] = _sign(params)
-    resp = requests.post(f"{FAPI_BASE}{path}", params=params, headers=_headers(), timeout=10)
+    resp = requests.post(f"{FAPI_BASE}{path}", params=params, headers=_headers(), timeout=10, verify=False)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def _delete(path: str, params: dict = None) -> dict:
+    params = params or {}
+    params["timestamp"] = int(time.time() * 1000)
+    params["signature"] = _sign(params)
+    resp = requests.delete(f"{FAPI_BASE}{path}", params=params, headers=_headers(), timeout=10, verify=False)
     resp.raise_for_status()
     return resp.json()
 

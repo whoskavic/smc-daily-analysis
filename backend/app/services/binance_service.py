@@ -5,10 +5,12 @@ Falls back to public endpoints so the app works without API keys for read-only d
 import ccxt
 import requests
 import logging
+import urllib3
 from datetime import datetime, timezone
 from typing import List, Dict, Optional
 from app.config import settings
 
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 logger = logging.getLogger(__name__)
 
 # CoinGecko IDs for fallback price data
@@ -84,7 +86,7 @@ def fetch_ticker(symbol: str) -> Dict:
     # 1. Binance futures
     try:
         url = f"https://fapi.binance.com/fapi/v1/ticker/24hr?symbol={binance_symbol}"
-        resp = requests.get(url, timeout=10)
+        resp = requests.get(url, timeout=10, verify=False)
         resp.raise_for_status()
         t = resp.json()
         logger.info(f"Ticker from Binance futures: {symbol}")
@@ -102,7 +104,7 @@ def fetch_ticker(symbol: str) -> Dict:
     # 2. Binance spot
     try:
         url = f"https://api.binance.com/api/v3/ticker/24hr?symbol={binance_symbol}"
-        resp = requests.get(url, timeout=10)
+        resp = requests.get(url, timeout=10, verify=False)
         resp.raise_for_status()
         t = resp.json()
         logger.info(f"Ticker from Binance spot: {symbol}")
@@ -122,7 +124,7 @@ def fetch_ticker(symbol: str) -> Dict:
     if cg_id:
         try:
             url = f"https://api.coingecko.com/api/v3/coins/{cg_id}?localization=false&tickers=false&community_data=false&developer_data=false"
-            resp = requests.get(url, timeout=10)
+            resp = requests.get(url, timeout=10, verify=False)
             resp.raise_for_status()
             data = resp.json()
             md = data["market_data"]
