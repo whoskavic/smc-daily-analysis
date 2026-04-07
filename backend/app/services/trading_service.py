@@ -62,20 +62,29 @@ def _delete(path: str, params: dict = None) -> dict:
 # ── Account ────────────────────────────────────────────────────────────────────
 
 def get_account_balance() -> Dict:
-    data = _get("/fapi/v2/balance")
-    for asset in data:
-        if asset.get("asset") == "USDT":
-            return {
-                "asset": "USDT",
-                "wallet_balance": float(asset.get("balance", 0)),
-                "available_balance": float(asset.get("availableBalance", 0)),
-                "unrealized_pnl": float(asset.get("crossUnPnl", 0)),
-            }
+    # Try v3 first, fall back to v2
+    for path in ["/fapi/v3/balance", "/fapi/v2/balance"]:
+        try:
+            data = _get(path)
+            for asset in data:
+                if asset.get("asset") == "USDT":
+                    return {
+                        "asset": "USDT",
+                        "wallet_balance": float(asset.get("balance", 0)),
+                        "available_balance": float(asset.get("availableBalance", 0)),
+                        "unrealized_pnl": float(asset.get("crossUnPnl", 0)),
+                    }
+        except Exception as e:
+            logger.warning(f"Balance endpoint {path} failed: {e}")
+            continue
     return {}
 
 
 def get_positions() -> List[Dict]:
-    data = _get("/fapi/v2/positionRisk")
+    try:
+        data = _get("/fapi/v3/positionRisk")
+    except Exception:
+        data = _get("/fapi/v2/positionRisk")
     positions = []
     for p in data:
         amt = float(p.get("positionAmt", 0))
