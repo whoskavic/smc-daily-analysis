@@ -51,14 +51,16 @@ def get_analysis_for_symbol(
     return [_serialize(r) for r in records]
 
 
-@router.post("/run/{symbol}")
+@router.post("/run")
 async def trigger_analysis(
     symbol: str,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
-    """Manually trigger analysis for a symbol. Runs in the background."""
-    symbol = symbol.replace("%2F", "/").upper()
+    """Manually trigger analysis for a symbol. Runs in the background.
+    Pass symbol as a query param: POST /api/analysis/run?symbol=BTC/USDT
+    """
+    symbol = symbol.upper()
     if symbol not in settings.watch_symbols:
         raise HTTPException(status_code=400, detail=f"{symbol} is not in watch list")
 
