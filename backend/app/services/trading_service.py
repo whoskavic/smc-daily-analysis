@@ -62,16 +62,31 @@ def _delete(path: str, params: dict = None) -> dict:
 # ── Account ────────────────────────────────────────────────────────────────────
 
 def get_account_balance() -> Dict:
-    """Portfolio Margin balance: GET /papi/v1/balance"""
-    data = _get("/papi/v1/balance")
-    for asset in data:
-        if asset.get("asset") == "USDT":
-            return {
-                "asset": "USDT",
-                "wallet_balance": float(asset.get("totalWalletBalance", asset.get("balance", 0))),
-                "available_balance": float(asset.get("availableBalance", 0)),
-                "unrealized_pnl": float(asset.get("umUnrealizedPNL", 0)),
-            }
+    """Portfolio Margin balance. Try multiple endpoints."""
+    for path in ["/papi/v1/balance", "/papi/v1/account"]:
+        try:
+            data = _get(path)
+            # /papi/v1/balance returns a list
+            if isinstance(data, list):
+                for asset in data:
+                    if asset.get("asset") == "USDT":
+                        return {
+                            "asset": "USDT",
+                            "wallet_balance": float(asset.get("totalWalletBalance", asset.get("balance", 0))),
+                            "available_balance": float(asset.get("availableBalance", 0)),
+                            "unrealized_pnl": float(asset.get("umUnrealizedPNL", 0)),
+                        }
+            # /papi/v1/account returns a dict
+            elif isinstance(data, dict):
+                return {
+                    "asset": "USDT",
+                    "wallet_balance": float(data.get("totalWalletBalance", 0)),
+                    "available_balance": float(data.get("availableBalance", data.get("maxWithdrawAmount", 0))),
+                    "unrealized_pnl": float(data.get("totalUnrealizedProfit", 0)),
+                    "raw": data,
+                }
+        except Exception as e:
+            logger.warning(f"Balance {path} failed: {e}")
     return {}
 
 
