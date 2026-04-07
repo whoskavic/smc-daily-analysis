@@ -14,7 +14,7 @@ from app.config import settings
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 logger = logging.getLogger(__name__)
 
-PAPI_BASE = "https://papi.binance.com"   # Portfolio Margin API
+FAPI_BASE = "https://fapi.binance.com"   # USDⓈ-M Futures
 
 
 def _sign(query_string: str) -> str:
@@ -34,7 +34,7 @@ def _get(path: str, params: dict = None) -> dict:
     params["timestamp"] = int(time.time() * 1000)
     query = urlencode(params)
     params["signature"] = _sign(query)
-    resp = requests.get(f"{PAPI_BASE}{path}", params=params, headers=_headers(), verify=False, timeout=10)
+    resp = requests.get(f"{FAPI_BASE}{path}", params=params, headers=_headers(), verify=False, timeout=10)
     resp.raise_for_status()
     return resp.json()
 
@@ -44,7 +44,7 @@ def _post(path: str, params: dict = None) -> dict:
     params["timestamp"] = int(time.time() * 1000)
     query = urlencode(params)
     params["signature"] = _sign(query)
-    resp = requests.post(f"{PAPI_BASE}{path}", params=params, headers=_headers(), verify=False, timeout=10)
+    resp = requests.post(f"{FAPI_BASE}{path}", params=params, headers=_headers(), verify=False, timeout=10)
     resp.raise_for_status()
     return resp.json()
 
@@ -54,7 +54,7 @@ def _delete(path: str, params: dict = None) -> dict:
     params["timestamp"] = int(time.time() * 1000)
     query = urlencode(params)
     params["signature"] = _sign(query)
-    resp = requests.delete(f"{PAPI_BASE}{path}", params=params, headers=_headers(), verify=False, timeout=10)
+    resp = requests.delete(f"{FAPI_BASE}{path}", params=params, headers=_headers(), verify=False, timeout=10)
     resp.raise_for_status()
     return resp.json()
 
@@ -63,36 +63,21 @@ def _delete(path: str, params: dict = None) -> dict:
 
 def get_account_balance() -> Dict:
     """Portfolio Margin balance. Try multiple endpoints."""
-    for path in ["/papi/v1/balance", "/papi/v1/account"]:
-        try:
-            data = _get(path)
-            # /papi/v1/balance returns a list
-            if isinstance(data, list):
-                for asset in data:
-                    if asset.get("asset") == "USDT":
-                        return {
-                            "asset": "USDT",
-                            "wallet_balance": float(asset.get("totalWalletBalance", asset.get("balance", 0))),
-                            "available_balance": float(asset.get("availableBalance", 0)),
-                            "unrealized_pnl": float(asset.get("umUnrealizedPNL", 0)),
-                        }
-            # /papi/v1/account returns a dict
-            elif isinstance(data, dict):
-                return {
-                    "asset": "USDT",
-                    "wallet_balance": float(data.get("totalWalletBalance", 0)),
-                    "available_balance": float(data.get("availableBalance", data.get("maxWithdrawAmount", 0))),
-                    "unrealized_pnl": float(data.get("totalUnrealizedProfit", 0)),
-                    "raw": data,
-                }
-        except Exception as e:
-            logger.warning(f"Balance {path} failed: {e}")
+    data = _get("/fapi/v3/balance")
+    for asset in data:
+        if asset.get("asset") == "USDT":
+            return {
+                "asset": "USDT",
+                "wallet_balance": float(asset.get("balance", 0)),
+                "available_balance": float(asset.get("availableBalance", 0)),
+                "unrealized_pnl": float(asset.get("crossUnPnl", 0)),
+            }
     return {}
 
 
 def get_positions() -> List[Dict]:
-    """Portfolio Margin UM Futures positions: GET /papi/v1/um/positionRisk"""
-    data = _get("/papi/v1/um/positionRisk")
+    """Portfolio Margin UM Futures positions: GET /fapi/v3/positionRisk"""
+    data = _get("/fapi/v3/positionRisk")
     positions = []
     for p in data:
         amt = float(p.get("positionAmt", 0))
@@ -113,13 +98,13 @@ def get_positions() -> List[Dict]:
 
 
 def get_open_orders(symbol: str) -> List[Dict]:
-    return _get("/papi/v1/um/openOrders", {"symbol": symbol.replace("/", "")})
+    return _get("/fapi/v1/openOrders", {"symbol": symbol.replace("/", "")})
 
 
 # ── Order placement ────────────────────────────────────────────────────────────
 
 def set_leverage(symbol: str, leverage: int) -> Dict:
-    return _post("/papi/v1/um/leverage", {"symbol": symbol.replace("/", ""), "leverage": leverage})
+    return _post("/fapi/v1/leverage", {"symbol": symbol.replace("/", ""), "leverage": leverage})
 
 
 def place_order(symbol, side, quantity, order_type="MARKET", price=None, reduce_only=False) -> Dict:
@@ -134,11 +119,11 @@ def place_order(symbol, side, quantity, order_type="MARKET", price=None, reduce_
         params["timeInForce"] = "GTC"
     if reduce_only:
         params["reduceOnly"] = "true"
-    return _post("/papi/v1/um/order", params)
+    return _post("/fapi/v1/order", params)
 
 
 def place_stop_market(symbol, side, stop_price, quantity) -> Dict:
-    return _post("/papi/v1/um/order", {
+    return _post("/fapi/v1/order", {
         "symbol": symbol.replace("/", ""),
         "side": side,
         "type": "STOP_MARKET",
@@ -149,7 +134,7 @@ def place_stop_market(symbol, side, stop_price, quantity) -> Dict:
 
 
 def place_take_profit_market(symbol, side, stop_price, quantity) -> Dict:
-    return _post("/papi/v1/um/order", {
+    return _post("/fapi/v1/order", {
         "symbol": symbol.replace("/", ""),
         "side": side,
         "type": "TAKE_PROFIT_MARKET",
