@@ -70,15 +70,15 @@ def _delete(path: str, params: dict = None) -> dict:
 # ── Account ────────────────────────────────────────────────────────────────────
 
 def get_account_balance() -> Dict:
-    """Returns USDT balance available for futures trading."""
-    data = _get("/fapi/v2/account")
-    for asset in data.get("assets", []):
-        if asset["asset"] == "USDT":
+    """Returns USDT balance using /fapi/v2/balance endpoint."""
+    data = _get("/fapi/v2/balance")
+    for asset in data:
+        if asset.get("asset") == "USDT":
             return {
                 "asset": "USDT",
-                "wallet_balance": float(asset["walletBalance"]),
-                "available_balance": float(asset["availableBalance"]),
-                "unrealized_pnl": float(asset["unrealizedProfit"]),
+                "wallet_balance": float(asset.get("balance", 0)),
+                "available_balance": float(asset.get("availableBalance", 0)),
+                "unrealized_pnl": float(asset.get("crossUnPnl", 0)),
             }
     return {}
 
