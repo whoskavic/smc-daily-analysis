@@ -4,9 +4,21 @@ Falls back to public endpoints so the app works without API keys for read-only d
 """
 import ccxt
 import requests
+import logging
 from datetime import datetime, timezone
 from typing import List, Dict, Optional
 from app.config import settings
+
+logger = logging.getLogger(__name__)
+
+# CoinGecko IDs for fallback price data
+COINGECKO_IDS = {
+    "BTC/USDT": "bitcoin",
+    "ETH/USDT": "ethereum",
+    "SOL/USDT": "solana",
+    "BNB/USDT": "binancecoin",
+    "XRP/USDT": "ripple",
+}
 
 
 def _get_exchange() -> ccxt.binance:
@@ -66,31 +78,67 @@ def fetch_fear_greed() -> Optional[int]:
 
 
 def fetch_ticker(symbol: str) -> Dict:
-    """Current price + 24h stats via Binance public REST — no ccxt market loading needed."""
-    # Convert ccxt format BTC/USDT → BTCUSDT
+    """Current price + 24h stats. Tries Binance futures → spot → CoinGecko."""
     binance_symbol = symbol.replace("/", "")
 
-    # Try futures first, fall back to spot
-    for base_url in [
-        f"https://fapi.binance.com/fapi/v1/ticker/24hr?symbol={binance_symbol}",
-        f"https://api.binance.com/api/v3/ticker/24hr?symbol={binance_symbol}",
-    ]:
+    # 1. Binance futures
+    try:
+        url = f"https://fapi.binance.com/fapi/v1/ticker/24hr?symbol={binance_symbol}"
+        resp = requests.get(url, timeout=10)
+        resp.raise_for_status()
+        t = resp.json()
+        logger.info(f"Ticker from Binance futures: {symbol}")
+        return {
+            "symbol": symbol,
+            "last": float(t.get("lastPrice", 0)),
+            "high": float(t.get("highPrice", 0)),
+            "low": float(t.get("lowPrice", 0)),
+            "volume": float(t.get("volume", 0)),
+            "change_pct": float(t.get("priceChangePercent", 0)),
+        }
+    except Exception as e:
+        logger.warning(f"Binance futures ticker failed for {symbol}: {e}")
+
+    # 2. Binance spot
+    try:
+        url = f"https://api.binance.com/api/v3/ticker/24hr?symbol={binance_symbol}"
+        resp = requests.get(url, timeout=10)
+        resp.raise_for_status()
+        t = resp.json()
+        logger.info(f"Ticker from Binance spot: {symbol}")
+        return {
+            "symbol": symbol,
+            "last": float(t.get("lastPrice", 0)),
+            "high": float(t.get("highPrice", 0)),
+            "low": float(t.get("lowPrice", 0)),
+            "volume": float(t.get("volume", 0)),
+            "change_pct": float(t.get("priceChangePercent", 0)),
+        }
+    except Exception as e:
+        logger.warning(f"Binance spot ticker failed for {symbol}: {e}")
+
+    # 3. CoinGecko fallback (no API key needed, works everywhere)
+    cg_id = COINGECKO_IDS.get(symbol)
+    if cg_id:
         try:
-            resp = requests.get(base_url, timeout=10)
+            url = f"https://api.coingecko.com/api/v3/coins/{cg_id}?localization=false&tickers=false&community_data=false&developer_data=false"
+            resp = requests.get(url, timeout=10)
             resp.raise_for_status()
-            t = resp.json()
+            data = resp.json()
+            md = data["market_data"]
+            logger.info(f"Ticker from CoinGecko: {symbol}")
             return {
                 "symbol": symbol,
-                "last": float(t.get("lastPrice", 0)),
-                "high": float(t.get("highPrice", 0)),
-                "low": float(t.get("lowPrice", 0)),
-                "volume": float(t.get("volume", 0)),
-                "change_pct": float(t.get("priceChangePercent", 0)),
+                "last": md["current_price"]["usd"],
+                "high": md["high_24h"]["usd"],
+                "low": md["low_24h"]["usd"],
+                "volume": md["total_volume"]["usd"],
+                "change_pct": md["price_change_percentage_24h"],
             }
-        except Exception:
-            continue
+        except Exception as e:
+            logger.warning(f"CoinGecko ticker failed for {symbol}: {e}")
 
-    raise Exception(f"Could not fetch ticker for {symbol} from Binance")
+    raise Exception(f"All ticker sources failed for {symbol}")
 
 
 def fetch_market_snapshot(symbol: str) -> Dict:
