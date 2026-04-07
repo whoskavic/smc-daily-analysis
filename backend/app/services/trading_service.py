@@ -63,7 +63,7 @@ def _delete(path: str, params: dict = None) -> dict:
 
 def get_account_balance() -> Dict:
     """Portfolio Margin balance. Try multiple endpoints."""
-    data = _get("/fapi/v3/balance")
+    data = _get("/fapi/v2/balance")
     for asset in data:
         if asset.get("asset") == "USDT":
             return {
@@ -76,8 +76,8 @@ def get_account_balance() -> Dict:
 
 
 def get_positions() -> List[Dict]:
-    """Portfolio Margin UM Futures positions: GET /fapi/v3/positionRisk"""
-    data = _get("/fapi/v3/positionRisk")
+    """Portfolio Margin UM Futures positions: GET /fapi/v2/positionRisk"""
+    data = _get("/fapi/v2/positionRisk")
     positions = []
     for p in data:
         amt = float(p.get("positionAmt", 0))
