@@ -10,6 +10,12 @@ class Settings(BaseSettings):
 
     # Anthropic
     anthropic_api_key: str = ""
+
+    def model_post_init(self, __context):
+        # Strip Windows carriage returns (\r) from string fields
+        object.__setattr__(self, "binance_api_key", self.binance_api_key.strip())
+        object.__setattr__(self, "binance_api_secret", self.binance_api_secret.strip())
+        object.__setattr__(self, "anthropic_api_key", self.anthropic_api_key.strip())
     claude_model: str = "claude-sonnet-4-6"
 
     # App
