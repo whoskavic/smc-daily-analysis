@@ -39,6 +39,31 @@ class DailyAnalysis(Base):
     raw_prompt = Column(Text)
 
 
+class TradeHistory(Base):
+    __tablename__ = "trade_history"
+
+    id = Column(Integer, primary_key=True, index=True)
+    symbol = Column(String, index=True)
+    direction = Column(String)               # LONG / SHORT
+    order_type = Column(String)              # MARKET / LIMIT
+    quantity = Column(Float)
+    entry_price = Column(Float)
+    stop_loss = Column(Float)
+    take_profit = Column(Float)
+    leverage = Column(Integer)
+    usdt_amount = Column(Float)
+    entry_order_id = Column(String, nullable=True)
+    sl_order_id = Column(String, nullable=True)
+    tp_order_id = Column(String, nullable=True)
+    status = Column(String, default="open")  # open / closed / cancelled
+    pnl = Column(Float, nullable=True)
+    close_price = Column(Float, nullable=True)
+    analysis_id = Column(Integer, nullable=True)  # link to DailyAnalysis
+    executed_at = Column(DateTime, default=datetime.utcnow)
+    closed_at = Column(DateTime, nullable=True)
+    notes = Column(Text, nullable=True)
+
+
 class CandleCache(Base):
     __tablename__ = "candle_cache"
 

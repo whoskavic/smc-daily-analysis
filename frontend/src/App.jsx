@@ -105,6 +105,7 @@ export default function App() {
         <div style={styles.sidePanel}>
           <AnalysisPanel
             analysis={analysis}
+            symbol={selected}
             onRunAnalysis={handleRunAnalysis}
             loading={loading}
           />

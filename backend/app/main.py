@@ -4,7 +4,7 @@ import logging
 
 from app.config import settings
 from app.models.database import init_db
-from app.routers import analysis
+from app.routers import analysis, trade
 from app.services.scheduler import start_scheduler
 
 logging.basicConfig(level=logging.INFO)
@@ -24,6 +24,7 @@ app.add_middleware(
 )
 
 app.include_router(analysis.router)
+app.include_router(trade.router)
 
 
 @app.on_event("startup")

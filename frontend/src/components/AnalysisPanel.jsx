@@ -2,10 +2,12 @@ import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import BiasCard from "./BiasCard";
 import KeyLevels from "./KeyLevels";
+import TradeExecutor from "./TradeExecutor";
+import TradeHistory from "./TradeHistory";
 
-const TAB = { SUMMARY: "summary", FULL: "full", TRADE: "trade" };
+const TAB = { SUMMARY: "summary", EXECUTE: "execute", HISTORY: "history", FULL: "full" };
 
-export default function AnalysisPanel({ analysis, onRunAnalysis, loading }) {
+export default function AnalysisPanel({ analysis, symbol, onRunAnalysis, loading }) {
   const [tab, setTab] = useState(TAB.SUMMARY);
 
   return (
@@ -49,13 +51,19 @@ export default function AnalysisPanel({ analysis, onRunAnalysis, loading }) {
               <div>
                 <h3 style={styles.sectionTitle}>Key SMC Levels</h3>
                 <KeyLevels levels={analysis.key_levels} />
+                <h3 style={{ ...styles.sectionTitle, marginTop: 14 }}>Trade Idea</h3>
+                <div style={styles.markdown}>
+                  <ReactMarkdown>{analysis.trade_idea || "_No trade idea extracted._"}</ReactMarkdown>
+                </div>
               </div>
             )}
 
-            {tab === TAB.TRADE && (
-              <div style={styles.markdown}>
-                <ReactMarkdown>{analysis.trade_idea || "_No trade idea extracted._"}</ReactMarkdown>
-              </div>
+            {tab === TAB.EXECUTE && (
+              <TradeExecutor analysis={analysis} symbol={symbol} />
+            )}
+
+            {tab === TAB.HISTORY && (
+              <TradeHistory />
             )}
 
             {tab === TAB.FULL && (
