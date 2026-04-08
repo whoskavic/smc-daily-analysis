@@ -108,7 +108,16 @@ def set_leverage(symbol: str, leverage: int) -> Dict:
     return _post("/fapi/v1/leverage", {"symbol": symbol.replace("/", ""), "leverage": leverage})
 
 
-def place_order(symbol, side, quantity, order_type="MARKET", price=None, reduce_only=False) -> Dict:
+def is_hedge_mode() -> bool:
+    """Returns True if the account is in Hedge Mode (dualSidePosition=true)."""
+    try:
+        data = _get("/fapi/v1/positionSide/dual")
+        return data.get("dualSidePosition", False)
+    except Exception:
+        return False
+
+
+def place_order(symbol, side, quantity, order_type="MARKET", price=None, position_side=None) -> Dict:
     params = {
         "symbol": symbol.replace("/", ""),
         "side": side,
@@ -118,36 +127,50 @@ def place_order(symbol, side, quantity, order_type="MARKET", price=None, reduce_
     if order_type == "LIMIT":
         params["price"] = price
         params["timeInForce"] = "GTC"
-    if reduce_only:
-        params["reduceOnly"] = "true"
+    if position_side:
+        params["positionSide"] = position_side
+    else:
+        params["reduceOnly"] = "false"
     return _post("/fapi/v1/order", params)
 
 
-def place_stop_market(symbol, side, stop_price, quantity) -> Dict:
-    return _post("/fapi/v1/order", {
+def place_stop_market(symbol, side, stop_price, quantity, position_side=None) -> Dict:
+    params = {
         "symbol": symbol.replace("/", ""),
         "side": side,
         "type": "STOP_MARKET",
         "stopPrice": round(stop_price, 2),
         "quantity": quantity,
-        "reduceOnly": "true",
-    })
+    }
+    if position_side:
+        params["positionSide"] = position_side
+    else:
+        params["reduceOnly"] = "true"
+    return _post("/fapi/v1/order", params)
 
 
-def place_take_profit_market(symbol, side, stop_price, quantity) -> Dict:
-    return _post("/fapi/v1/order", {
+def place_take_profit_market(symbol, side, stop_price, quantity, position_side=None) -> Dict:
+    params = {
         "symbol": symbol.replace("/", ""),
         "side": side,
         "type": "TAKE_PROFIT_MARKET",
         "stopPrice": round(stop_price, 2),
         "quantity": quantity,
-        "reduceOnly": "true",
-    })
+    }
+    if position_side:
+        params["positionSide"] = position_side
+    else:
+        params["reduceOnly"] = "true"
+    return _post("/fapi/v1/order", params)
 
 
 def execute_trade_plan(symbol, direction, usdt_amount, entry_price, stop_loss, take_profit, leverage=10) -> Dict:
+    import math
     entry_side = "BUY" if direction == "LONG" else "SELL"
     close_side = "SELL" if direction == "LONG" else "BUY"
+    # Hedge Mode requires positionSide; One-way Mode uses reduceOnly
+    hedge = is_hedge_mode()
+    position_side = direction if hedge else None  # "LONG" or "SHORT"
 
     set_leverage(symbol, leverage)
 
@@ -168,18 +191,17 @@ def execute_trade_plan(symbol, direction, usdt_amount, entry_price, stop_loss, t
         logger.info(f"usdt_amount adjusted to {usdt_amount} to meet $100 min notional")
 
     # Ceil to 3 decimals so rounding never drops the notional below $100
-    import math
     quantity = math.ceil((notional / ref_price) * 1000) / 1000
 
     if entry_price:
-        entry_order = place_order(symbol, entry_side, quantity, "LIMIT", price=round(entry_price, 2))
+        entry_order = place_order(symbol, entry_side, quantity, "LIMIT", price=round(entry_price, 2), position_side=position_side)
         order_type_used = "LIMIT"
     else:
-        entry_order = place_order(symbol, entry_side, quantity, "MARKET")
+        entry_order = place_order(symbol, entry_side, quantity, "MARKET", position_side=position_side)
         order_type_used = "MARKET"
 
-    sl_order = place_stop_market(symbol, close_side, stop_loss, quantity)
-    tp_order = place_take_profit_market(symbol, close_side, take_profit, quantity)
+    sl_order = place_stop_market(symbol, close_side, stop_loss, quantity, position_side=position_side)
+    tp_order = place_take_profit_market(symbol, close_side, take_profit, quantity, position_side=position_side)
 
     return {
         "symbol": symbol,
