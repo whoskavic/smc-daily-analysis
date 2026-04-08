@@ -140,17 +140,28 @@ def parse_analysis(raw_text: str, snapshot: Dict) -> Dict:
     text_lower = raw_text.lower()
 
     # ── Bias ──────────────────────────────────────────────────────────────────
-    # Akumulasi → bullish, Distribusi → bearish, Manipulasi → neutral
-    if "akumulasi" in text_lower:
-        bias = "bullish"
-    elif "distribusi" in text_lower:
-        bias = "bearish"
-    elif "bullish" in text_lower:
-        bias = "bullish"
-    elif "bearish" in text_lower:
-        bias = "bearish"
+    # Priority 1: explicit BIAS UTAMA line in the summary box
+    bias_match = re.search(r"BIAS UTAMA\s*[:\|]\s*(BULLISH|BEARISH|NEUTRAL)", raw_text, re.IGNORECASE)
+    if bias_match:
+        bias = bias_match.group(1).lower()
     else:
-        bias = "neutral"
+        # Priority 2: Verdict line in institutional bias section
+        verdict_match = re.search(r"Verdict[:\s*]+.*(DISTRIBUSI|AKUMULASI|MANIPULASI)", raw_text, re.IGNORECASE)
+        if verdict_match:
+            v = verdict_match.group(1).upper()
+            bias = "bearish" if v == "DISTRIBUSI" else ("bullish" if v == "AKUMULASI" else "neutral")
+        else:
+            # Fallback: broad keyword scan (last resort)
+            if "distribusi" in text_lower:
+                bias = "bearish"
+            elif "akumulasi" in text_lower:
+                bias = "bullish"
+            elif "bearish" in text_lower:
+                bias = "bearish"
+            elif "bullish" in text_lower:
+                bias = "bullish"
+            else:
+                bias = "neutral"
 
     # ── Confidence ────────────────────────────────────────────────────────────
     confidence = 50
@@ -183,14 +194,19 @@ def parse_analysis(raw_text: str, snapshot: Dict) -> Dict:
             trade_idea = idea_match.group(1).strip()
 
     # ── Direction ─────────────────────────────────────────────────────────────
-    trade_direction = None
-    # NO TRADE check first
-    if re.search(r"NO TRADE|WAIT|STAY OUT", raw_text, re.IGNORECASE):
+    # Check KEPUTUSAN / final decision line first — this is the authoritative signal
+    # "NO TRADE" in the KEPUTUSAN block locks the decision; conditional plan is ignored.
+    no_trade = bool(re.search(r"KEPUTUSAN\s*[:\|].*?(NO TRADE|WAIT|STAY OUT)", raw_text, re.IGNORECASE))
+    if not no_trade:
+        # Also catch standalone NO TRADE declarations outside table
+        no_trade = bool(re.search(r"⛔\s*NO TRADE|^\s*NO TRADE\b", raw_text, re.IGNORECASE | re.MULTILINE))
+
+    if no_trade:
         trade_direction = "WAIT"
-    # Then look for explicit direction line in execution plan
-    dir_match = re.search(r"Direction\s*:\s*(LONG|SHORT)", raw_text, re.IGNORECASE)
-    if dir_match:
-        trade_direction = dir_match.group(1).upper()
+    else:
+        # Only extract direction if there is an actual execution signal
+        dir_match = re.search(r"^Direction\s*:\s*(LONG|SHORT)", raw_text, re.IGNORECASE | re.MULTILINE)
+        trade_direction = dir_match.group(1).upper() if dir_match else None
 
     # ── Price extractor ───────────────────────────────────────────────────────
     def extract_price(pattern):
@@ -199,12 +215,16 @@ def parse_analysis(raw_text: str, snapshot: Dict) -> Dict:
             return float(m.group(1).replace(",", ""))
         return None
 
-    trade_entry = extract_price(r"Entry Point\s*:\s*\**([0-9][0-9,]*(?:\.[0-9]*)?)")
-    trade_sl    = extract_price(r"Stop Loss\s*:\s*\**([0-9][0-9,]*(?:\.[0-9]*)?)")
-    trade_tp    = (
-        extract_price(r"TP1\s*:\s*\**([0-9][0-9,]*(?:\.[0-9]*)?)")
-        or extract_price(r"Take Profit\s*1?\s*:\s*\**([0-9][0-9,]*(?:\.[0-9]*)?)")
-    )
+    # Only extract prices when there is an actual trade signal
+    if trade_direction in ("LONG", "SHORT"):
+        trade_entry = extract_price(r"Entry Point\s*:\s*\**([0-9][0-9,]*(?:\.[0-9]*)?)")
+        trade_sl    = extract_price(r"Stop Loss\s*:\s*\**([0-9][0-9,]*(?:\.[0-9]*)?)")
+        trade_tp    = (
+            extract_price(r"TP1\s*:\s*\**([0-9][0-9,]*(?:\.[0-9]*)?)")
+            or extract_price(r"Take Profit\s*1?\s*:\s*\**([0-9][0-9,]*(?:\.[0-9]*)?)")
+        )
+    else:
+        trade_entry = trade_sl = trade_tp = None
 
     candles_1d  = snapshot.get("candles_1d", [])
     last_candle = candles_1d[-1] if candles_1d else {}
