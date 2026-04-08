@@ -13,7 +13,14 @@ export default function TradeExecutor({ analysis, symbol }) {
 
   if (!analysis) return null;
 
-  // Use structured fields from backend first, fall back to text parser
+  // If backend says WAIT/NO TRADE, never show a trade setup
+  if (analysis.trade_direction === "WAIT") return (
+    <div style={styles.empty}>
+      ⛔ NO TRADE — Analisis menyarankan menunggu konfirmasi setup yang lebih kuat.
+    </div>
+  );
+
+  // Use structured fields from backend first, fall back to text parser only for LONG/SHORT
   const tradeIdea = (analysis.trade_direction && analysis.trade_sl && analysis.trade_tp)
     ? {
         direction: analysis.trade_direction,
