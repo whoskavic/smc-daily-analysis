@@ -4,9 +4,13 @@ automatically places a trade with $10 USDT / 10x leverage if Claude
 gives a LONG or SHORT signal with valid SL and TP.
 
 Order logic:
-  - LIMIT  → entry_price is set AND price hasn't reached it yet
-  - MARKET → no entry_price, or price already at/past the entry level
+  - No entry_price from Claude           → MARKET (enter now)
+  - entry_price set, within 0.5% of market → MARKET (too close, don't miss it)
+  - entry_price set, price hasn't reached it yet (>0.5% away) → LIMIT at entry
+  - entry_price set, price already blew past entry → MARKET (catch it now)
 """
+import requests
+import urllib3
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 import pytz
@@ -18,21 +22,59 @@ from app.services.binance_service import fetch_market_snapshot
 from app.services.claude_service import run_analysis
 from app.models.database import SessionLocal, DailyAnalysis, TradeHistory
 
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 logger = logging.getLogger(__name__)
 scheduler = AsyncIOScheduler()
 
-AUTO_TRADE_USDT   = 10      # fixed margin per trade
+AUTO_TRADE_USDT    = 10     # fixed margin per trade
 AUTO_TRADE_LEVERAGE = 10    # fixed leverage
+NEAR_THRESHOLD     = 0.005  # 0.5 % — if price is this close to entry, use MARKET
 
+
+def _current_price(symbol: str) -> float:
+    resp = requests.get(
+        f"https://fapi.binance.com/fapi/v1/ticker/price?symbol={symbol.replace('/', '')}",
+        verify=False, timeout=5,
+    )
+    return float(resp.json()["price"])
+
+
+def _decide_order(direction: str, entry: float, current: float):
+    """
+    Returns (order_type_label, entry_price_for_api).
+    entry_price_for_api=None  → MARKET in execute_trade_plan.
+    entry_price_for_api=float → LIMIT at that price.
+    """
+    diff = abs(current - entry) / current
+
+    if diff <= NEAR_THRESHOLD:
+        # Price is essentially at the entry zone → MARKET
+        return "MARKET", None
+
+    if direction == "LONG":
+        if current > entry:
+            # Price above entry: waiting for pullback → LIMIT below
+            return "LIMIT", entry
+        else:
+            # Price already below entry (blew through it) → MARKET now
+            return "MARKET", None
+    else:  # SHORT
+        if current < entry:
+            # Price below entry: waiting for rally → LIMIT above
+            return "LIMIT", entry
+        else:
+            # Price already above entry → MARKET now
+            return "MARKET", None
 
 
 async def _auto_trade(db, analysis_record: DailyAnalysis, result: dict):
-    """Place MARKET entry + SL + TP orders automatically after analysis."""
+    """Place entry + SL + TP orders automatically after analysis."""
     from app.services.trading_service import execute_trade_plan
 
     direction = result.get("trade_direction")
     sl        = result.get("trade_sl")
     tp        = result.get("trade_tp")
+    entry     = result.get("trade_entry")   # may be None
     symbol    = result["symbol"]
 
     if direction not in ("LONG", "SHORT"):
@@ -42,9 +84,26 @@ async def _auto_trade(db, analysis_record: DailyAnalysis, result: dict):
         logger.info(f"[AutoTrade] {symbol}: missing SL/TP, skipping.")
         return
 
+    # Determine LIMIT vs MARKET
+    if entry:
+        try:
+            current = _current_price(symbol)
+        except Exception as e:
+            logger.error(f"[AutoTrade] {symbol}: could not fetch price: {e}, defaulting to MARKET")
+            current = None
+
+        if current:
+            order_label, order_entry = _decide_order(direction, entry, current)
+        else:
+            order_label, order_entry = "MARKET", None
+    else:
+        # Claude gave no specific entry → enter at market
+        order_label, order_entry = "MARKET", None
+
     logger.info(
-        f"[AutoTrade] {symbol}: {direction} MARKET | "
-        f"SL={sl} TP={tp} usdt={AUTO_TRADE_USDT} lev={AUTO_TRADE_LEVERAGE}x"
+        f"[AutoTrade] {symbol}: {direction} {order_label} | "
+        f"entry={order_entry or 'market'} SL={sl} TP={tp} "
+        f"usdt={AUTO_TRADE_USDT} lev={AUTO_TRADE_LEVERAGE}x"
     )
 
     try:
@@ -52,7 +111,7 @@ async def _auto_trade(db, analysis_record: DailyAnalysis, result: dict):
             symbol=symbol,
             direction=direction,
             usdt_amount=AUTO_TRADE_USDT,
-            entry_price=None,    # always MARKET — enter now
+            entry_price=order_entry,
             stop_loss=sl,
             take_profit=tp,
             leverage=AUTO_TRADE_LEVERAGE,
