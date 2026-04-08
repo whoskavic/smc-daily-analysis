@@ -134,34 +134,38 @@ def place_order(symbol, side, quantity, order_type="MARKET", price=None, positio
     return _post("/fapi/v1/order", params)
 
 
-def place_stop_market(symbol, side, stop_price, quantity, position_side=None) -> Dict:
+def _place_algo_conditional(symbol, side, order_type, stop_price, quantity, position_side=None) -> Dict:
+    """
+    Place a conditional order via the Algo Order API.
+    Binance migrated STOP_MARKET / TAKE_PROFIT_MARKET out of /fapi/v1/order on Dec 9 2025.
+    New endpoint: POST /fapi/v1/algo/orders
+    Response uses 'algoId'; we normalise it to 'orderId' for the rest of the code.
+    """
     params = {
         "symbol": symbol.replace("/", ""),
         "side": side,
-        "type": "STOP_MARKET",
-        "stopPrice": round(stop_price, 2),
+        "type": order_type,
         "quantity": quantity,
+        "stopPrice": round(stop_price, 2),
+        "workingType": "CONTRACT_PRICE",
+        "priceProtect": "FALSE",
     }
     if position_side:
         params["positionSide"] = position_side
     else:
         params["reduceOnly"] = "true"
-    return _post("/fapi/v1/order", params)
+    resp = _post("/fapi/v1/algo/orders", params)
+    # Algo orders return algoId — expose as orderId so callers stay consistent
+    resp.setdefault("orderId", resp.get("algoId"))
+    return resp
+
+
+def place_stop_market(symbol, side, stop_price, quantity, position_side=None) -> Dict:
+    return _place_algo_conditional(symbol, side, "STOP_MARKET", stop_price, quantity, position_side)
 
 
 def place_take_profit_market(symbol, side, stop_price, quantity, position_side=None) -> Dict:
-    params = {
-        "symbol": symbol.replace("/", ""),
-        "side": side,
-        "type": "TAKE_PROFIT_MARKET",
-        "stopPrice": round(stop_price, 2),
-        "quantity": quantity,
-    }
-    if position_side:
-        params["positionSide"] = position_side
-    else:
-        params["reduceOnly"] = "true"
-    return _post("/fapi/v1/order", params)
+    return _place_algo_conditional(symbol, side, "TAKE_PROFIT_MARKET", stop_price, quantity, position_side)
 
 
 def execute_trade_plan(symbol, direction, usdt_amount, entry_price, stop_loss, take_profit, leverage=10) -> Dict:
