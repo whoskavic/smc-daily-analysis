@@ -132,6 +132,24 @@ def parse_analysis(raw_text: str, snapshot: Dict) -> Dict:
     if trade_match:
         trade_idea = trade_match.group(1).strip()
 
+    # Extract structured trade plan prices from table format
+    def table_price(keyword):
+        pattern = re.compile(
+            rf"\|[^|]*{keyword}[^|]*\|[^|*]*\**([0-9][0-9,]*(?:\.[0-9]*)?)",
+            re.IGNORECASE
+        )
+        m = pattern.search(raw_text)
+        return float(m.group(1).replace(",", "")) if m else None
+
+    trade_direction = None
+    dir_match = re.search(r"direction[:\s*|]+\**\s*(LONG|SHORT|WAIT)", raw_text, re.IGNORECASE)
+    if dir_match:
+        trade_direction = dir_match.group(1).upper()
+
+    trade_entry = table_price("Entry Zone") or table_price("Entry")
+    trade_sl    = table_price("Stop Loss")
+    trade_tp    = table_price("Take Profit 1") or table_price("Take Profit")
+
     ticker = snapshot.get("ticker", {})
     candles_1d = snapshot.get("candles_1d", [])
     last_candle = candles_1d[-1] if candles_1d else {}
@@ -142,6 +160,10 @@ def parse_analysis(raw_text: str, snapshot: Dict) -> Dict:
         "confidence": confidence,
         "key_levels": key_levels,
         "trade_idea": trade_idea,
+        "trade_direction": trade_direction,
+        "trade_entry": trade_entry,
+        "trade_sl": trade_sl,
+        "trade_tp": trade_tp,
         "full_analysis": raw_text,
         "open_price": last_candle.get("open"),
         "high_price": last_candle.get("high"),

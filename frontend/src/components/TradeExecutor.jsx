@@ -13,8 +13,18 @@ export default function TradeExecutor({ analysis, symbol }) {
 
   if (!analysis) return null;
 
-  // Parse trade idea from analysis to extract entry, SL, TP
-  const tradeIdea = parseTradePlan(analysis);
+  // Use structured fields from backend first, fall back to text parser
+  const tradeIdea = (analysis.trade_direction && analysis.trade_sl && analysis.trade_tp)
+    ? {
+        direction: analysis.trade_direction,
+        entryPrice: analysis.trade_entry || null,
+        stopLoss: analysis.trade_sl,
+        takeProfit: analysis.trade_tp,
+        rr: analysis.trade_entry
+          ? Math.abs(analysis.trade_tp - analysis.trade_entry) / Math.abs(analysis.trade_entry - analysis.trade_sl)
+          : null,
+      }
+    : parseTradePlan(analysis);
   if (!tradeIdea) return (
     <div style={styles.empty}>Run analysis first to generate a trade plan.</div>
   );
@@ -165,28 +175,49 @@ export default function TradeExecutor({ analysis, symbol }) {
 // ── Parser ─────────────────────────────────────────────────────────────────────
 function parseTradePlan(analysis) {
   const text = analysis?.full_analysis || analysis?.trade_idea || "";
+  const levels = analysis?.key_levels || [];
   if (!text) return null;
 
-  const dir = /direction[:\s]+(LONG|SHORT|WAIT)/i.exec(text)?.[1]?.toUpperCase();
+  // Direction
+  const dir = /direction[:\s*|]+\*{0,2}(LONG|SHORT|WAIT)/i.exec(text)?.[1]?.toUpperCase();
   if (!dir || dir === "WAIT") return null;
 
-  const priceNum = (pattern) => {
-    const m = pattern.exec(text);
-    if (!m) return null;
-    return parseFloat(m[1].replace(/,/g, ""));
+  // Extract first price from a markdown table cell matching a keyword
+  const tablePrice = (keyword) => {
+    const re = new RegExp(
+      `\\|[^|]*${keyword}[^|]*\\|[^|\\*]*\\*{0,2}([0-9][0-9,]*(?:\\.[0-9]*)?)`,
+      "i"
+    );
+    const m = re.exec(text);
+    return m ? parseFloat(m[1].replace(/,/g, "")) : null;
   };
 
-  const entry = priceNum(/entry[^:]*:[^\d]*([0-9,]+\.?[0-9]*)/i);
-  const sl = priceNum(/stop[\s_-]?loss[^:]*:[^\d]*([0-9,]+\.?[0-9]*)/i);
-  const tp = priceNum(/take[\s_-]?profit[\s1]*[^:]*:[^\d]*([0-9,]+\.?[0-9]*)/i);
+  // Also try plain text format: "Stop Loss: 70,900"
+  const plainPrice = (keyword) => {
+    const re = new RegExp(`${keyword}[^:\\n]*:[^\\d]*([0-9][0-9,]*(?:\\.[0-9]*)?)`, "i");
+    const m = re.exec(text);
+    return m ? parseFloat(m[1].replace(/,/g, "")) : null;
+  };
 
-  if (!sl || !tp) return null;
+  const entry = tablePrice("Entry Zone") || tablePrice("Entry") || plainPrice("Entry Zone") || plainPrice("Entry");
+  const sl    = tablePrice("Stop Loss")  || plainPrice("Stop.?Loss");
+  const tp    = tablePrice("Take Profit 1") || tablePrice("Take Profit") || plainPrice("Take Profit 1") || plainPrice("Take Profit");
 
-  const rr = entry && sl
-    ? Math.abs(tp - entry) / Math.abs(entry - sl)
+  // Fallback: derive SL/TP from key_levels if regex failed
+  const supportLevel = levels.find(l => ["Support", "Order Block Bullish", "Discount Zone"].includes(l.type));
+  const resistLevel  = levels.find(l => ["Resistance", "Liquidity Zone", "Equal Highs"].includes(l.type));
+
+  const finalEntry = entry || null;
+  const finalSL    = sl || (supportLevel ? supportLevel.price : null);
+  const finalTP    = tp || (resistLevel  ? resistLevel.price  : null);
+
+  if (!finalSL || !finalTP) return null;
+
+  const rr = finalEntry && finalSL
+    ? Math.abs(finalTP - finalEntry) / Math.abs(finalEntry - finalSL)
     : null;
 
-  return { direction: dir, entryPrice: entry, stopLoss: sl, takeProfit: tp, rr };
+  return { direction: dir, entryPrice: finalEntry, stopLoss: finalSL, takeProfit: finalTP, rr };
 }
 
 const styles = {

@@ -37,6 +37,11 @@ class DailyAnalysis(Base):
     trade_idea = Column(Text)
     full_analysis = Column(Text)
     raw_prompt = Column(Text)
+    # Structured trade plan (parsed from Claude output)
+    trade_direction = Column(String, nullable=True)      # LONG / SHORT
+    trade_entry = Column(Float, nullable=True)
+    trade_sl = Column(Float, nullable=True)
+    trade_tp = Column(Float, nullable=True)
 
 
 class TradeHistory(Base):
