@@ -7,18 +7,24 @@ services:
     environment:
       DATABASE_URL: sqlite:////app/data/smc_analysis.db
     volumes:
-      - db_data:/app/data          # SQLite file persists here
+      - db_data:/app/data
     ports:
-      - "8000:8000"                # optional: expose for direct API access
+      - "8000:8000"
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
 
   frontend:
     build: ./frontend
     container_name: smc-frontend
     restart: unless-stopped
     ports:
-      - "80:80"                    # access the UI at http://localhost
+      - "80:80"
     depends_on:
       - backend
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
 
 volumes:
   db_data:                         # named volume keeps DB between restarts
