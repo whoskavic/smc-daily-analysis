@@ -163,8 +163,9 @@ def parse_analysis(raw_text: str, snapshot: Dict) -> Dict:
             confidence = int(conf_match.group(1))
 
     # ── Key levels JSON block ─────────────────────────────────────────────────
+    # Use a greedy capture between ```json ... ``` to get the full outer object
     key_levels = []
-    json_match = re.search(r"```json\s*(\{.*?\})\s*```", raw_text, re.DOTALL)
+    json_match = re.search(r"```json\s*([\s\S]*?)\s*```", raw_text)
     if json_match:
         try:
             key_levels = json.loads(json_match.group(1)).get("key_levels", [])
@@ -235,7 +236,7 @@ def run_analysis(snapshot: Dict) -> Dict:
 
     message = _get_client().messages.create(
         model=settings.claude_model,
-        max_tokens=2048,
+        max_tokens=4096,
         messages=[{"role": "user", "content": prompt}],
     )
 
