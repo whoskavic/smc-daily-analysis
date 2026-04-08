@@ -83,8 +83,29 @@ class CandleCache(Base):
     volume = Column(Float)
 
 
+def _migrate_add_columns():
+    """Add new columns to existing tables without dropping data."""
+    import sqlite3
+    db_path = engine.url.database
+    conn = sqlite3.connect(db_path)
+    cur = conn.cursor()
+    existing = {row[1] for row in cur.execute("PRAGMA table_info(daily_analysis)").fetchall()}
+    migrations = [
+        ("trade_direction", "TEXT"),
+        ("trade_entry",     "REAL"),
+        ("trade_sl",        "REAL"),
+        ("trade_tp",        "REAL"),
+    ]
+    for col, col_type in migrations:
+        if col not in existing:
+            cur.execute(f"ALTER TABLE daily_analysis ADD COLUMN {col} {col_type}")
+    conn.commit()
+    conn.close()
+
+
 def init_db():
     Base.metadata.create_all(bind=engine)
+    _migrate_add_columns()
 
 
 def get_db():
