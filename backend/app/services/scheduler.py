@@ -1,24 +1,127 @@
 """
-APScheduler: runs daily analysis at the configured time (default 08:00 WIB).
-Start this alongside FastAPI via app/main.py.
+APScheduler: runs daily analysis at 22:30 WIB (Asia/Jakarta) then
+automatically places a trade with $10 USDT / 10x leverage if Claude
+gives a LONG or SHORT signal with valid SL and TP.
+
+Order logic:
+  - LIMIT  → entry_price is set AND price hasn't reached it yet
+  - MARKET → no entry_price, or price already at/past the entry level
 """
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 import pytz
 import logging
+import requests
+import urllib3
 from datetime import datetime, date
 
 from app.config import settings
 from app.services.binance_service import fetch_market_snapshot
 from app.services.claude_service import run_analysis
-from app.models.database import SessionLocal, DailyAnalysis
+from app.models.database import SessionLocal, DailyAnalysis, TradeHistory
 
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 logger = logging.getLogger(__name__)
 scheduler = AsyncIOScheduler()
 
+AUTO_TRADE_USDT   = 10      # fixed margin per trade
+AUTO_TRADE_LEVERAGE = 10    # fixed leverage
+
+
+def _current_price(symbol: str) -> float:
+    resp = requests.get(
+        f"https://fapi.binance.com/fapi/v1/ticker/price?symbol={symbol.replace('/', '')}",
+        verify=False, timeout=5,
+    )
+    return float(resp.json()["price"])
+
+
+def _should_use_limit(direction: str, entry_price: float, current: float) -> bool:
+    """Return True when price hasn't reached the entry zone yet."""
+    if direction == "LONG":
+        # Waiting for a pullback — entry is below current price
+        return current > entry_price * 1.001          # at least 0.1 % away
+    else:  # SHORT
+        # Waiting for a rally — entry is above current price
+        return current < entry_price * 0.999
+
+
+async def _auto_trade(db, analysis_record: DailyAnalysis, result: dict):
+    """Place entry + SL + TP orders automatically after analysis."""
+    from app.services.trading_service import execute_trade_plan
+
+    direction = result.get("trade_direction")
+    sl        = result.get("trade_sl")
+    tp        = result.get("trade_tp")
+    entry     = result.get("trade_entry")   # may be None
+    symbol    = result["symbol"]
+
+    if direction not in ("LONG", "SHORT"):
+        logger.info(f"[AutoTrade] {symbol}: direction={direction}, skipping.")
+        return
+    if not sl or not tp:
+        logger.info(f"[AutoTrade] {symbol}: missing SL/TP, skipping.")
+        return
+
+    try:
+        current = _current_price(symbol)
+    except Exception as e:
+        logger.error(f"[AutoTrade] {symbol}: could not fetch price: {e}")
+        return
+
+    # Decide LIMIT vs MARKET
+    if entry and _should_use_limit(direction, entry, current):
+        order_entry = entry
+        order_label = "LIMIT"
+    else:
+        order_entry = None   # execute_trade_plan will use market price
+        order_label = "MARKET"
+
+    logger.info(
+        f"[AutoTrade] {symbol}: {direction} {order_label} | "
+        f"entry={order_entry or 'market'} SL={sl} TP={tp} "
+        f"usdt={AUTO_TRADE_USDT} lev={AUTO_TRADE_LEVERAGE}x"
+    )
+
+    try:
+        trade_result = execute_trade_plan(
+            symbol=symbol,
+            direction=direction,
+            usdt_amount=AUTO_TRADE_USDT,
+            entry_price=order_entry,
+            stop_loss=sl,
+            take_profit=tp,
+            leverage=AUTO_TRADE_LEVERAGE,
+        )
+
+        # Persist to trade history
+        trade = TradeHistory(
+            symbol=symbol,
+            direction=direction,
+            order_type=trade_result["order_type"],
+            quantity=trade_result["quantity"],
+            entry_price=trade_result["entry_price"],
+            stop_loss=sl,
+            take_profit=tp,
+            leverage=AUTO_TRADE_LEVERAGE,
+            usdt_amount=AUTO_TRADE_USDT,
+            entry_order_id=str(trade_result.get("entry_order_id", "")),
+            sl_order_id=str(trade_result.get("sl_order_id", "")),
+            tp_order_id=str(trade_result.get("tp_order_id", "")),
+            status="open",
+            analysis_id=analysis_record.id,
+            notes=f"Auto-trade | analysis {analysis_record.analysis_date} | bias={result['bias']}",
+        )
+        db.add(trade)
+        db.commit()
+        logger.info(f"[AutoTrade] {symbol}: orders placed successfully. trade_id={trade.id}")
+
+    except Exception as e:
+        logger.error(f"[AutoTrade] {symbol}: order failed: {e}", exc_info=True)
+
 
 async def run_daily_analysis():
-    """Fetch market data + run Claude analysis for every watched symbol."""
+    """Fetch market data → run Claude analysis → auto-trade for every watched symbol."""
     today = date.today().isoformat()
     logger.info(f"[Scheduler] Running daily analysis for {today}")
 
@@ -57,10 +160,21 @@ async def run_daily_analysis():
                 trade_idea=result.get("trade_idea", ""),
                 full_analysis=result.get("full_analysis", ""),
                 raw_prompt=result.get("raw_prompt", ""),
+                trade_direction=result.get("trade_direction"),
+                trade_entry=result.get("trade_entry"),
+                trade_sl=result.get("trade_sl"),
+                trade_tp=result.get("trade_tp"),
             )
             db.add(record)
             db.commit()
-            logger.info(f"[Scheduler] Saved analysis for {symbol}: bias={result['bias']}")
+            db.refresh(record)
+            logger.info(
+                f"[Scheduler] Saved analysis for {symbol}: "
+                f"bias={result['bias']} dir={result.get('trade_direction')}"
+            )
+
+            # Auto-place trade based on analysis
+            await _auto_trade(db, record, result)
 
         except Exception as e:
             logger.error(f"[Scheduler] Error analyzing {symbol}: {e}", exc_info=True)
@@ -80,5 +194,6 @@ def start_scheduler():
     )
     scheduler.start()
     logger.info(
-        f"[Scheduler] Daily analysis scheduled at {settings.daily_analysis_time} {settings.timezone}"
+        f"[Scheduler] Daily analysis + auto-trade scheduled at "
+        f"{settings.daily_analysis_time} {settings.timezone}"
     )

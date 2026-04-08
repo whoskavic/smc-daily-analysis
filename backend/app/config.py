@@ -20,7 +20,7 @@ class Settings(BaseSettings):
 
     # App
     app_name: str = "SMC Daily Analysis"
-    daily_analysis_time: str = "08:00"   # 24h, WIB (UTC+7) — adjust in scheduler
+    daily_analysis_time: str = "22:30"   # 22:30 WIB (Asia/Jakarta, UTC+7)
     timezone: str = "Asia/Jakarta"
 
     # Symbols to analyze every day
