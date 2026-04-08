@@ -100,6 +100,10 @@ def _run_and_save(symbol: str, db: Session):
         trade_idea=result.get("trade_idea", ""),
         full_analysis=result.get("full_analysis", ""),
         raw_prompt=result.get("raw_prompt", ""),
+        trade_direction=result.get("trade_direction"),
+        trade_entry=result.get("trade_entry"),
+        trade_sl=result.get("trade_sl"),
+        trade_tp=result.get("trade_tp"),
     )
     db.add(record)
     db.commit()
@@ -116,6 +120,10 @@ def _serialize(r: DailyAnalysis) -> dict:
         "key_levels": r.key_levels or [],
         "trade_idea": r.trade_idea,
         "full_analysis": r.full_analysis,
+        "trade_direction": r.trade_direction,
+        "trade_entry": r.trade_entry,
+        "trade_sl": r.trade_sl,
+        "trade_tp": r.trade_tp,
         "open_price": r.open_price,
         "high_price": r.high_price,
         "low_price": r.low_price,
