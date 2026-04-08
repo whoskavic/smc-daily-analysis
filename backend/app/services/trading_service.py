@@ -102,6 +102,48 @@ def get_open_orders(symbol: str) -> List[Dict]:
     return _get("/fapi/v1/openOrders", {"symbol": symbol.replace("/", "")})
 
 
+def get_open_algo_orders(symbol: str) -> List[Dict]:
+    """Conditional (SL/TP) algo orders still pending trigger."""
+    try:
+        data = _get("/fapi/v1/openAlgoOrders", {"symbol": symbol.replace("/", "")})
+        return data if isinstance(data, list) else data.get("orders", [])
+    except Exception:
+        return []
+
+
+def has_active_position_or_order(symbol: str) -> bool:
+    """
+    Returns True if the symbol already has:
+    - an open futures position (positionAmt != 0), OR
+    - any open regular order (LIMIT/MARKET pending fill), OR
+    - any open algo order (conditional SL/TP not yet triggered)
+    """
+    binance_symbol = symbol.replace("/", "")
+    # Check positions
+    try:
+        positions = _get("/fapi/v2/positionRisk", {"symbol": binance_symbol})
+        for p in positions:
+            if abs(float(p.get("positionAmt", 0))) > 0:
+                return True
+    except Exception:
+        pass
+    # Check regular open orders
+    try:
+        orders = _get("/fapi/v1/openOrders", {"symbol": binance_symbol})
+        if orders:
+            return True
+    except Exception:
+        pass
+    # Check algo (conditional) open orders
+    try:
+        algo = get_open_algo_orders(symbol)
+        if algo:
+            return True
+    except Exception:
+        pass
+    return False
+
+
 # ── Order placement ────────────────────────────────────────────────────────────
 
 def set_leverage(symbol: str, leverage: int) -> Dict:

@@ -69,7 +69,7 @@ def _decide_order(direction: str, entry: float, current: float):
 
 async def _auto_trade(db, analysis_record: DailyAnalysis, result: dict):
     """Place entry + SL + TP orders automatically after analysis."""
-    from app.services.trading_service import execute_trade_plan
+    from app.services.trading_service import execute_trade_plan, has_active_position_or_order
 
     direction = result.get("trade_direction")
     sl        = result.get("trade_sl")
@@ -82,6 +82,19 @@ async def _auto_trade(db, analysis_record: DailyAnalysis, result: dict):
         return
     if not sl or not tp:
         logger.info(f"[AutoTrade] {symbol}: missing SL/TP, skipping.")
+        return
+
+    # ── Safety gate: skip if position or order already exists ─────────────────
+    try:
+        if has_active_position_or_order(symbol):
+            logger.info(
+                f"[AutoTrade] {symbol}: active position or open order detected — "
+                "skipping auto-trade to avoid duplicate."
+            )
+            return
+    except Exception as e:
+        logger.error(f"[AutoTrade] {symbol}: could not check active orders: {e} — skipping.")
+        return
         return
 
     # Determine LIMIT vs MARKET
