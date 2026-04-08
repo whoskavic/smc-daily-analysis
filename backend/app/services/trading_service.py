@@ -159,7 +159,15 @@ def execute_trade_plan(symbol, direction, usdt_amount, entry_price, stop_loss, t
         ).json()
         ref_price = float(ticker["price"])
 
-    quantity = round((usdt_amount * leverage) / ref_price, 3)
+    # Binance minimum notional is $100 — ensure we meet it
+    MIN_NOTIONAL = 100.0
+    notional = usdt_amount * leverage
+    if notional < MIN_NOTIONAL:
+        usdt_amount = MIN_NOTIONAL / leverage
+        notional = MIN_NOTIONAL
+        logger.info(f"usdt_amount adjusted to {usdt_amount} to meet $100 min notional")
+
+    quantity = round(notional / ref_price, 3)
 
     if entry_price:
         entry_order = place_order(symbol, entry_side, quantity, "LIMIT", price=round(entry_price, 2))
