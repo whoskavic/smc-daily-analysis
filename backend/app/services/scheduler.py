@@ -11,8 +11,6 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 import pytz
 import logging
-import requests
-import urllib3
 from datetime import datetime, date
 
 from app.config import settings
@@ -20,7 +18,6 @@ from app.services.binance_service import fetch_market_snapshot
 from app.services.claude_service import run_analysis
 from app.models.database import SessionLocal, DailyAnalysis, TradeHistory
 
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 logger = logging.getLogger(__name__)
 scheduler = AsyncIOScheduler()
 
@@ -28,32 +25,14 @@ AUTO_TRADE_USDT   = 10      # fixed margin per trade
 AUTO_TRADE_LEVERAGE = 10    # fixed leverage
 
 
-def _current_price(symbol: str) -> float:
-    resp = requests.get(
-        f"https://fapi.binance.com/fapi/v1/ticker/price?symbol={symbol.replace('/', '')}",
-        verify=False, timeout=5,
-    )
-    return float(resp.json()["price"])
-
-
-def _should_use_limit(direction: str, entry_price: float, current: float) -> bool:
-    """Return True when price hasn't reached the entry zone yet."""
-    if direction == "LONG":
-        # Waiting for a pullback — entry is below current price
-        return current > entry_price * 1.001          # at least 0.1 % away
-    else:  # SHORT
-        # Waiting for a rally — entry is above current price
-        return current < entry_price * 0.999
-
 
 async def _auto_trade(db, analysis_record: DailyAnalysis, result: dict):
-    """Place entry + SL + TP orders automatically after analysis."""
+    """Place MARKET entry + SL + TP orders automatically after analysis."""
     from app.services.trading_service import execute_trade_plan
 
     direction = result.get("trade_direction")
     sl        = result.get("trade_sl")
     tp        = result.get("trade_tp")
-    entry     = result.get("trade_entry")   # may be None
     symbol    = result["symbol"]
 
     if direction not in ("LONG", "SHORT"):
@@ -63,24 +42,9 @@ async def _auto_trade(db, analysis_record: DailyAnalysis, result: dict):
         logger.info(f"[AutoTrade] {symbol}: missing SL/TP, skipping.")
         return
 
-    try:
-        current = _current_price(symbol)
-    except Exception as e:
-        logger.error(f"[AutoTrade] {symbol}: could not fetch price: {e}")
-        return
-
-    # Decide LIMIT vs MARKET
-    if entry and _should_use_limit(direction, entry, current):
-        order_entry = entry
-        order_label = "LIMIT"
-    else:
-        order_entry = None   # execute_trade_plan will use market price
-        order_label = "MARKET"
-
     logger.info(
-        f"[AutoTrade] {symbol}: {direction} {order_label} | "
-        f"entry={order_entry or 'market'} SL={sl} TP={tp} "
-        f"usdt={AUTO_TRADE_USDT} lev={AUTO_TRADE_LEVERAGE}x"
+        f"[AutoTrade] {symbol}: {direction} MARKET | "
+        f"SL={sl} TP={tp} usdt={AUTO_TRADE_USDT} lev={AUTO_TRADE_LEVERAGE}x"
     )
 
     try:
@@ -88,7 +52,7 @@ async def _auto_trade(db, analysis_record: DailyAnalysis, result: dict):
             symbol=symbol,
             direction=direction,
             usdt_amount=AUTO_TRADE_USDT,
-            entry_price=order_entry,
+            entry_price=None,    # always MARKET — enter now
             stop_loss=sl,
             take_profit=tp,
             leverage=AUTO_TRADE_LEVERAGE,
