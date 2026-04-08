@@ -146,7 +146,7 @@ def _place_algo_conditional(symbol, side, order_type, stop_price, quantity, posi
         "symbol": symbol.replace("/", ""),
         "side": side,
         "algoType": "CONDITIONAL",
-        "orderType": order_type,
+        "type": order_type,
         "quantity": quantity,
         "triggerPrice": round(stop_price, 2),
         "workingType": "CONTRACT_PRICE",
