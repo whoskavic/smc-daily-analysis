@@ -45,7 +45,8 @@ def _post(path: str, params: dict = None) -> dict:
     query = urlencode(params)
     params["signature"] = _sign(query)
     resp = requests.post(f"{FAPI_BASE}{path}", params=params, headers=_headers(), verify=False, timeout=10)
-    resp.raise_for_status()
+    if not resp.ok:
+        raise Exception(f"Binance {resp.status_code}: {resp.text}")
     return resp.json()
 
 
