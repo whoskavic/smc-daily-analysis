@@ -167,7 +167,9 @@ def execute_trade_plan(symbol, direction, usdt_amount, entry_price, stop_loss, t
         notional = MIN_NOTIONAL
         logger.info(f"usdt_amount adjusted to {usdt_amount} to meet $100 min notional")
 
-    quantity = round(notional / ref_price, 3)
+    # Ceil to 3 decimals so rounding never drops the notional below $100
+    import math
+    quantity = math.ceil((notional / ref_price) * 1000) / 1000
 
     if entry_price:
         entry_order = place_order(symbol, entry_side, quantity, "LIMIT", price=round(entry_price, 2))
