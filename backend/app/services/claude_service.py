@@ -140,9 +140,8 @@ def parse_analysis(raw_text: str, snapshot: Dict) -> Dict:
     text_lower = raw_text.lower()
 
     # ── Bias ──────────────────────────────────────────────────────────────────
-    # Priority 1: explicit BIAS or BIAS UTAMA line in the summary box
-    # Matches: "BIAS UTAMA : BEARISH", "│  BIAS      : BEARISH", "BIAS: BULLISH"
-    bias_match = re.search(r"\bBIAS(?:\s+UTAMA)?\**\s*[:\|]\s*\**\s*(BULLISH|BEARISH|NEUTRAL)", raw_text, re.IGNORECASE)
+    # Priority 1: explicit BIAS UTAMA line in the summary box
+    bias_match = re.search(r"BIAS UTAMA\s*[:\|]\s*(BULLISH|BEARISH|NEUTRAL)", raw_text, re.IGNORECASE)
     if bias_match:
         bias = bias_match.group(1).lower()
     else:
@@ -166,8 +165,7 @@ def parse_analysis(raw_text: str, snapshot: Dict) -> Dict:
 
     # ── Confidence ────────────────────────────────────────────────────────────
     confidence = 50
-    # Handle both "PROBABILITAS: 87%" and "PROBABILITAS: ~87%"
-    conf_match = re.search(r"probabilitas[:\s>]+~?(\d+)%", raw_text, re.IGNORECASE)
+    conf_match = re.search(r"probabilitas[:\s>]+(\d+)%", raw_text, re.IGNORECASE)
     if conf_match:
         confidence = int(conf_match.group(1))
     else:
