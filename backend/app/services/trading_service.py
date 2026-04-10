@@ -7,6 +7,7 @@ import time
 import requests
 import logging
 import urllib3
+from datetime import datetime
 from typing import Dict, List, Optional
 from urllib.parse import urlencode
 from app.config import settings
@@ -15,6 +16,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 logger = logging.getLogger(__name__)
 
 FAPI_BASE = "https://fapi.binance.com"   # USDⓈ-M Futures
+SAPI_BASE = "https://api.binance.com"    # Spot / Margin
 
 
 def _sign(query_string: str) -> str:
@@ -29,12 +31,13 @@ def _headers() -> dict:
     return {"X-MBX-APIKEY": settings.binance_api_key}
 
 
-def _get(path: str, params: dict = None) -> dict:
+def _get(path: str, params: dict = None, base: str = None) -> dict:
     params = params or {}
     params["timestamp"] = int(time.time() * 1000)
     query = urlencode(params)
     params["signature"] = _sign(query)
-    resp = requests.get(f"{FAPI_BASE}{path}", params=params, headers=_headers(), verify=False, timeout=10)
+    url = f"{base or FAPI_BASE}{path}"
+    resp = requests.get(url, params=params, headers=_headers(), verify=False, timeout=10)
     resp.raise_for_status()
     return resp.json()
 
@@ -100,6 +103,69 @@ def get_positions() -> List[Dict]:
 
 def get_open_orders(symbol: str) -> List[Dict]:
     return _get("/fapi/v1/openOrders", {"symbol": symbol.replace("/", "")})
+
+
+def get_all_open_orders() -> List[Dict]:
+    """Return all open futures limit/stop orders across all symbols."""
+    data = _get("/fapi/v1/openOrders")
+    orders = []
+    for o in data:
+        orders.append({
+            "symbol": o.get("symbol"),
+            "order_id": o.get("orderId"),
+            "side": o.get("side"),
+            "type": o.get("type"),
+            "price": float(o.get("price", 0)),
+            "stop_price": float(o.get("stopPrice", 0)),
+            "orig_qty": float(o.get("origQty", 0)),
+            "executed_qty": float(o.get("executedQty", 0)),
+            "status": o.get("status"),
+            "position_side": o.get("positionSide", "BOTH"),
+            "time": o.get("time"),
+            "reduce_only": o.get("reduceOnly", False),
+        })
+    return orders
+
+
+def get_spot_account() -> Dict:
+    """Return non-zero Spot wallet balances with USD value via GET /api/v3/account."""
+    data = _get("/api/v3/account", base=SAPI_BASE)
+
+    # Fetch all ticker prices (public endpoint, no auth needed)
+    try:
+        price_resp = requests.get(
+            f"{SAPI_BASE}/api/v3/ticker/price", verify=False, timeout=10
+        )
+        price_map = {t["symbol"]: float(t["price"]) for t in price_resp.json()}
+    except Exception:
+        price_map = {}
+
+    # Stablecoins are 1:1 to USD
+    STABLES = {"USDT", "USDC", "BUSD", "TUSD", "FDUSD", "DAI", "USDP"}
+
+    balances = []
+    for b in data.get("balances", []):
+        total = float(b["free"]) + float(b["locked"])
+        if total <= 0:
+            continue
+        asset = b["asset"]
+        if asset in STABLES:
+            usd_price = 1.0
+        else:
+            usd_price = price_map.get(f"{asset}USDT") or price_map.get(f"{asset}BUSD")
+        balances.append({
+            "asset": asset,
+            "free": float(b["free"]),
+            "locked": float(b["locked"]),
+            "total": total,
+            "usd_price": usd_price,
+            "usd_value": round(total * usd_price, 2) if usd_price else None,
+        })
+
+    # Sort by USD value descending (unknown prices go last)
+    balances.sort(key=lambda x: x["usd_value"] or 0, reverse=True)
+    total_usd = sum(b["usd_value"] for b in balances if b["usd_value"] is not None)
+    return {"balances": balances, "total_usd": round(total_usd, 2)}
 
 
 def get_open_algo_orders(symbol: str) -> List[Dict]:
@@ -265,3 +331,80 @@ def execute_trade_plan(symbol, direction, usdt_amount, entry_price, stop_loss, t
         "tp_order_id": tp_order.get("orderId"),
         "status": "executed",
     }
+
+
+# ── Trade sync ─────────────────────────────────────────────────────────────────
+
+def sync_open_trades(db) -> int:
+    """
+    For every 'open' trade in local DB, check Binance:
+      1. If entry limit order is still pending  → skip (not filled yet)
+      2. If position still exists               → skip (still running)
+      3. Otherwise fetch realized PnL since execution:
+         - PnL found  → mark 'closed' with actual Binance PnL
+         - PnL = 0    → entry was never filled → mark 'cancelled'
+    Returns number of trades whose status was updated.
+    """
+    from app.models.database import TradeHistory
+
+    open_trades = db.query(TradeHistory).filter_by(status="open").all()
+    if not open_trades:
+        return 0
+
+    updated = 0
+    for trade in open_trades:
+        try:
+            binance_sym = trade.symbol.replace("/", "")
+
+            # ── 1. Entry order still pending? ─────────────────────────────────
+            try:
+                open_orders = _get("/fapi/v1/openOrders", {"symbol": binance_sym})
+                if any(str(o.get("orderId")) == str(trade.entry_order_id) for o in open_orders):
+                    continue  # Limit entry not filled yet — nothing to do
+            except Exception:
+                pass
+
+            # ── 2. Position still open? ───────────────────────────────────────
+            try:
+                positions = _get("/fapi/v2/positionRisk", {"symbol": binance_sym})
+                if any(abs(float(p.get("positionAmt", 0))) > 0 for p in positions):
+                    continue  # Position still running
+            except Exception:
+                pass
+
+            # ── 3. No order + no position: fetch realized PnL since entry ─────
+            start_ms = int(trade.executed_at.timestamp() * 1000) if trade.executed_at else None
+            realized = 0.0
+            try:
+                params: dict = {"symbol": binance_sym, "incomeType": "REALIZED_PNL", "limit": 100}
+                if start_ms:
+                    params["startTime"] = start_ms
+                income_list = _get("/fapi/v1/income", params)
+                realized = sum(float(i["income"]) for i in income_list)
+            except Exception as exc:
+                logger.warning(f"[Sync] Trade {trade.id}: income fetch failed: {exc}")
+
+            if realized == 0.0:
+                # Entry limit was never filled (e.g. cancelled on Binance)
+                trade.status = "cancelled"
+                logger.info(
+                    f"[Sync] Trade {trade.id} {trade.symbol}: no fill detected → cancelled"
+                )
+            else:
+                # Closed by TP or SL — use actual Binance PnL
+                trade.status = "closed"
+                trade.pnl = round(realized, 4)
+                trade.close_price = trade.take_profit if realized > 0 else trade.stop_loss
+                trade.closed_at = datetime.utcnow()
+                logger.info(
+                    f"[Sync] Trade {trade.id} {trade.symbol}: closed, "
+                    f"PnL={realized:+.4f} USDT"
+                )
+
+            db.commit()
+            updated += 1
+
+        except Exception as exc:
+            logger.error(f"[Sync] Trade {trade.id}: unexpected error: {exc}", exc_info=True)
+
+    return updated

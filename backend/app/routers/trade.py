@@ -45,6 +45,28 @@ def get_positions():
         raise HTTPException(status_code=502, detail=str(e))
 
 
+@router.get("/spot-balance")
+def get_spot_balance():
+    """Get Spot wallet balances (non-zero assets only)."""
+    if not settings.binance_api_key:
+        raise HTTPException(status_code=400, detail="Binance API key not configured")
+    try:
+        return trading_service.get_spot_account()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+@router.get("/open-orders")
+def get_open_orders():
+    """Get all open futures orders across all symbols."""
+    if not settings.binance_api_key:
+        raise HTTPException(status_code=400, detail="Binance API key not configured")
+    try:
+        return trading_service.get_all_open_orders()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
 @router.get("/history")
 def get_trade_history(limit: int = 50, db: Session = Depends(get_db)):
     """Get local trade history (all trades executed through this app)."""

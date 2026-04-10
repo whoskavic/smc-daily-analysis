@@ -10,3 +10,9 @@ export const triggerAnalysis = (symbol) =>
   api.post(`/analysis/run?symbol=${encodeURIComponent(symbol)}`).then((r) => r.data);
 export const getTicker = (symbol) =>
   api.get(`/analysis/ticker?symbol=${encodeURIComponent(symbol)}`).then((r) => r.data);
+
+// Dashboard
+export const getBalance = () => api.get("/trade/balance").then((r) => r.data);
+export const getPositions = () => api.get("/trade/positions").then((r) => r.data);
+export const getSpotBalance = () => api.get("/trade/spot-balance").then((r) => r.data);
+export const getOpenOrders = () => api.get("/trade/open-orders").then((r) => r.data);

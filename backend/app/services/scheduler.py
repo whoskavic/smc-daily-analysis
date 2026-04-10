@@ -218,6 +218,22 @@ async def run_daily_analysis():
             db.close()
 
 
+async def _sync_trades_job():
+    """Poll Binance every 60 s and close/cancel trades whose positions are gone."""
+    if not settings.binance_api_key:
+        return
+    from app.services.trading_service import sync_open_trades
+    db = SessionLocal()
+    try:
+        n = sync_open_trades(db)
+        if n:
+            logger.info(f"[SyncJob] Updated {n} trade(s)")
+    except Exception as exc:
+        logger.error(f"[SyncJob] Error: {exc}", exc_info=True)
+    finally:
+        db.close()
+
+
 def start_scheduler():
     hour, minute = settings.daily_analysis_time.split(":")
     tz = pytz.timezone(settings.timezone)
@@ -228,8 +244,19 @@ def start_scheduler():
         id="daily_analysis",
         replace_existing=True,
     )
+
+    # Sync open trade statuses from Binance every 60 seconds
+    scheduler.add_job(
+        _sync_trades_job,
+        trigger="interval",
+        seconds=60,
+        id="trade_sync",
+        replace_existing=True,
+    )
+
     scheduler.start()
     logger.info(
         f"[Scheduler] Daily analysis + auto-trade scheduled at "
         f"{settings.daily_analysis_time} {settings.timezone}"
     )
+    logger.info("[Scheduler] Trade sync job running every 60 s")
