@@ -7,11 +7,17 @@ export default function TradeHistory() {
   const [trades, setTrades] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  const fetchHistory = () => {
     api.get("/trade/history")
       .then((r) => setTrades(r.data))
       .catch(() => {})
       .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    fetchHistory();
+    const interval = setInterval(fetchHistory, 30_000);
+    return () => clearInterval(interval);
   }, []);
 
   const totalPnl = trades.reduce((sum, t) => sum + (t.pnl ?? 0), 0);

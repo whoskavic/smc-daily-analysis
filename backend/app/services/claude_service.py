@@ -140,8 +140,9 @@ def parse_analysis(raw_text: str, snapshot: Dict) -> Dict:
     text_lower = raw_text.lower()
 
     # ── Bias ──────────────────────────────────────────────────────────────────
-    # Priority 1: explicit BIAS UTAMA line in the summary box
-    bias_match = re.search(r"BIAS UTAMA\s*[:\|]\s*(BULLISH|BEARISH|NEUTRAL)", raw_text, re.IGNORECASE)
+    # Priority 1: explicit BIAS or BIAS UTAMA line in the summary box
+    # Matches: "BIAS UTAMA : BEARISH", "│  BIAS      : BEARISH", "**BIAS**: BULLISH"
+    bias_match = re.search(r"\bBIAS(?:\s+UTAMA)?\**\s*[:\|]\s*\**\s*(BULLISH|BEARISH|NEUTRAL)", raw_text, re.IGNORECASE)
     if bias_match:
         bias = bias_match.group(1).lower()
     else:
@@ -164,12 +165,14 @@ def parse_analysis(raw_text: str, snapshot: Dict) -> Dict:
                 bias = "neutral"
 
     # ── Confidence ────────────────────────────────────────────────────────────
-    confidence = 50
-    conf_match = re.search(r"probabilitas[:\s>]+(\d+)%", raw_text, re.IGNORECASE)
+    # Returns None if not found — no arbitrary default
+    # Handles: "PROBABILITAS: ~87%", "PROBABILITAS INSTITUSIONAL: ~87%", "CONFIDENCE: 87%"
+    confidence = None
+    conf_match = re.search(r"probabilitas[^%\n]*?(\d+)%", raw_text, re.IGNORECASE)
     if conf_match:
         confidence = int(conf_match.group(1))
     else:
-        conf_match = re.search(r"confidence[:\s]+(\d+)/100", raw_text, re.IGNORECASE)
+        conf_match = re.search(r"confidence[:\s]+(\d+)[%/]", raw_text, re.IGNORECASE)
         if conf_match:
             confidence = int(conf_match.group(1))
 
@@ -205,7 +208,8 @@ def parse_analysis(raw_text: str, snapshot: Dict) -> Dict:
         trade_direction = "WAIT"
     else:
         # Only extract direction if there is an actual execution signal
-        dir_match = re.search(r"^Direction\s*:\s*(LONG|SHORT)", raw_text, re.IGNORECASE | re.MULTILINE)
+        # No ^ anchor — Claude may prefix lines with ║ (box drawing char)
+        dir_match = re.search(r"Direction\s*:\s*(LONG|SHORT)", raw_text, re.IGNORECASE)
         trade_direction = dir_match.group(1).upper() if dir_match else None
 
     # ── Price extractor ───────────────────────────────────────────────────────
@@ -256,7 +260,7 @@ def run_analysis(snapshot: Dict) -> Dict:
 
     message = _get_client().messages.create(
         model=settings.claude_model,
-        max_tokens=4096,
+        max_tokens=8192,
         messages=[{"role": "user", "content": prompt}],
     )
 
