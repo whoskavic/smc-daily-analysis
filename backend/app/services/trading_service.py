@@ -382,7 +382,7 @@ def sync_open_trades(db) -> int:
     Returns number of trades updated.
     """
     from app.models.database import TradeHistory
-    from sqlalchemy import or_
+    from sqlalchemy import or_, and_
 
     # Check open trades AND cancelled-without-PnL (possible mis-classification)
     trades = (
@@ -390,11 +390,15 @@ def sync_open_trades(db) -> int:
         .filter(
             or_(
                 TradeHistory.status == "open",
-                (TradeHistory.status == "cancelled") & (TradeHistory.pnl == None),  # noqa: E711
+                and_(
+                    TradeHistory.status == "cancelled",
+                    TradeHistory.pnl.is_(None),
+                ),
             )
         )
         .all()
     )
+    logger.info(f"[Sync] Checking {len(trades)} trade(s) (open + unresolved cancelled)")
     if not trades:
         return 0
 
