@@ -335,74 +335,134 @@ def execute_trade_plan(symbol, direction, usdt_amount, entry_price, stop_loss, t
 
 # ── Trade sync ─────────────────────────────────────────────────────────────────
 
+def _check_entry_filled(binance_sym: str, entry_order_id: str) -> Optional[str]:
+    """
+    Query Binance for the entry order status.
+    Returns: "FILLED" | "CANCELED" | "NEW" | "PARTIALLY_FILLED" | None (on error)
+    """
+    try:
+        info = _get("/fapi/v1/order", {"symbol": binance_sym, "orderId": entry_order_id})
+        return info.get("status")
+    except Exception as exc:
+        logger.warning(f"[Sync] order status fetch failed for {entry_order_id}: {exc}")
+        return None
+
+
+def _get_close_fills(binance_sym: str, close_side: str, start_ms: int) -> List[Dict]:
+    """
+    Fetch user trades (fills) for the closing side since start_ms.
+    close_side: "BUY" for SHORT trades, "SELL" for LONG trades.
+    """
+    try:
+        params: dict = {"symbol": binance_sym, "limit": 100}
+        if start_ms:
+            params["startTime"] = start_ms
+        trades = _get("/fapi/v1/userTrades", params)
+        return [t for t in trades if t.get("side") == close_side]
+    except Exception as exc:
+        logger.warning(f"[Sync] userTrades fetch failed for {binance_sym}: {exc}")
+        return []
+
+
 def sync_open_trades(db) -> int:
     """
-    For every 'open' trade in local DB, check Binance:
-      1. If entry limit order is still pending  → skip (not filled yet)
-      2. If position still exists               → skip (still running)
-      3. Otherwise fetch realized PnL since execution:
-         - PnL found  → mark 'closed' with actual Binance PnL
-         - PnL = 0    → entry was never filled → mark 'cancelled'
-    Returns number of trades whose status was updated.
+    Sync trade statuses from Binance for every 'open' or wrongly-cancelled trade.
+
+    Decision tree per trade:
+      1. Entry order CANCELED on Binance       → mark 'cancelled' (entry never filled)
+      2. Entry order NEW / PARTIALLY_FILLED    → skip (still pending)
+      3. Entry order FILLED + position exists  → skip (position still running)
+      4. Entry order FILLED + position gone:
+           close fills found  → mark 'closed' with actual PnL from userTrades
+           no close fills     → skip (race condition, retry next cycle)
+
+    Also re-checks 'cancelled' trades with pnl=null in case they were wrongly
+    classified (e.g. due to a previous income-API failure).
+
+    Returns number of trades updated.
     """
     from app.models.database import TradeHistory
+    from sqlalchemy import or_
 
-    open_trades = db.query(TradeHistory).filter_by(status="open").all()
-    if not open_trades:
+    # Check open trades AND cancelled-without-PnL (possible mis-classification)
+    trades = (
+        db.query(TradeHistory)
+        .filter(
+            or_(
+                TradeHistory.status == "open",
+                (TradeHistory.status == "cancelled") & (TradeHistory.pnl == None),  # noqa: E711
+            )
+        )
+        .all()
+    )
+    if not trades:
         return 0
 
     updated = 0
-    for trade in open_trades:
+    for trade in trades:
         try:
             binance_sym = trade.symbol.replace("/", "")
+            start_ms = int(trade.executed_at.timestamp() * 1000) if trade.executed_at else None
+            close_side = "BUY" if trade.direction == "SHORT" else "SELL"
 
-            # ── 1. Entry order still pending? ─────────────────────────────────
-            try:
-                open_orders = _get("/fapi/v1/openOrders", {"symbol": binance_sym})
-                if any(str(o.get("orderId")) == str(trade.entry_order_id) for o in open_orders):
-                    continue  # Limit entry not filled yet — nothing to do
-            except Exception:
-                pass
+            # ── 1. Check entry order status on Binance ────────────────────────
+            entry_status = _check_entry_filled(binance_sym, str(trade.entry_order_id))
+
+            if entry_status in ("NEW", "PARTIALLY_FILLED"):
+                # Still waiting to fill — ensure DB says open and move on
+                if trade.status != "open":
+                    trade.status = "open"
+                    db.commit()
+                continue
+
+            if entry_status == "CANCELED":
+                # Entry was explicitly cancelled on Binance (not filled)
+                if trade.status != "cancelled":
+                    trade.status = "cancelled"
+                    db.commit()
+                    updated += 1
+                    logger.info(f"[Sync] Trade {trade.id} {trade.symbol}: entry CANCELED → cancelled")
+                continue
+
+            # entry_status == "FILLED" (or None/unknown — treat as potentially filled)
 
             # ── 2. Position still open? ───────────────────────────────────────
             try:
                 positions = _get("/fapi/v2/positionRisk", {"symbol": binance_sym})
                 if any(abs(float(p.get("positionAmt", 0))) > 0 for p in positions):
+                    if trade.status != "open":
+                        trade.status = "open"
+                        db.commit()
                     continue  # Position still running
             except Exception:
                 pass
 
-            # ── 3. No order + no position: fetch realized PnL since entry ─────
-            start_ms = int(trade.executed_at.timestamp() * 1000) if trade.executed_at else None
-            realized = 0.0
-            try:
-                params: dict = {"symbol": binance_sym, "incomeType": "REALIZED_PNL", "limit": 100}
-                if start_ms:
-                    params["startTime"] = start_ms
-                income_list = _get("/fapi/v1/income", params)
-                realized = sum(float(i["income"]) for i in income_list)
-            except Exception as exc:
-                logger.warning(f"[Sync] Trade {trade.id}: income fetch failed: {exc}")
+            # ── 3. Entry filled + no position: read actual close fills ─────────
+            close_fills = _get_close_fills(binance_sym, close_side, start_ms)
+            if not close_fills:
+                # No closing fills yet — could be race condition; skip this cycle
+                logger.debug(f"[Sync] Trade {trade.id}: no close fills yet, will retry")
+                continue
 
-            if realized == 0.0:
-                # Entry limit was never filled (e.g. cancelled on Binance)
-                trade.status = "cancelled"
-                logger.info(
-                    f"[Sync] Trade {trade.id} {trade.symbol}: no fill detected → cancelled"
-                )
-            else:
-                # Closed by TP or SL — use actual Binance PnL
-                trade.status = "closed"
-                trade.pnl = round(realized, 4)
-                trade.close_price = trade.take_profit if realized > 0 else trade.stop_loss
-                trade.closed_at = datetime.utcnow()
-                logger.info(
-                    f"[Sync] Trade {trade.id} {trade.symbol}: closed, "
-                    f"PnL={realized:+.4f} USDT"
-                )
+            realized = sum(float(f.get("realizedPnl", 0)) for f in close_fills)
+            total_qty = sum(float(f.get("qty", 0)) for f in close_fills)
+            avg_close = (
+                sum(float(f["price"]) * float(f["qty"]) for f in close_fills) / total_qty
+                if total_qty > 0 else None
+            )
 
+            trade.status = "closed"
+            trade.pnl = round(realized, 4)
+            trade.close_price = round(avg_close, 2) if avg_close else (
+                trade.take_profit if realized >= 0 else trade.stop_loss
+            )
+            trade.closed_at = datetime.utcnow()
             db.commit()
             updated += 1
+            logger.info(
+                f"[Sync] Trade {trade.id} {trade.symbol}: closed, "
+                f"PnL={realized:+.4f} USDT @ {trade.close_price}"
+            )
 
         except Exception as exc:
             logger.error(f"[Sync] Trade {trade.id}: unexpected error: {exc}", exc_info=True)
