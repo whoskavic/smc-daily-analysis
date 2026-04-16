@@ -18,10 +18,7 @@ app = FastAPI(
 CORS_ORIGINS = [
     "http://localhost:3000",
     "http://localhost:5173",
-    # Render frontend — update this after the Static Site is created
-    "https://smc-frontend.onrender.com",
-    # Allow any *.onrender.com subdomain (covers preview deploys too)
-    "https://*.onrender.com",
+    "https://smc-daily-analysis.onrender.com",
 ]
 
 app.add_middleware(
