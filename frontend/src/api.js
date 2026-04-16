@@ -1,6 +1,7 @@
 import axios from "axios";
 
-const api = axios.create({ baseURL: "/api" });
+const BASE = import.meta.env.VITE_API_BASE_URL || "/api";
+const api = axios.create({ baseURL: BASE });
 
 export const getSymbols = () => api.get("/analysis/symbols").then((r) => r.data.symbols);
 export const getLatestAnalyses = () => api.get("/analysis/latest").then((r) => r.data);
