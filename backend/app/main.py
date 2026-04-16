@@ -33,6 +33,17 @@ async def startup_event():
     start_scheduler()
 
 
+@app.get("/my-ip")
+def my_ip():
+    """Show outbound public IP of this server (use to whitelist in Binance)."""
+    import requests
+    try:
+        ip = requests.get("https://api.ipify.org", timeout=5).text.strip()
+    except Exception as e:
+        ip = f"error: {e}"
+    return {"outbound_ip": ip}
+
+
 @app.get("/")
 def root():
     return {"app": settings.app_name, "status": "running"}
