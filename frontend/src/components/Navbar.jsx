@@ -14,6 +14,9 @@ export default function Navbar() {
         <NavLink to="/trade" style={navStyle}>
           Trade
         </NavLink>
+        <NavLink to="/historical" style={navStyle}>
+          Historical
+        </NavLink>
       </nav>
     </header>
   );
