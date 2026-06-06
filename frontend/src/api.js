@@ -17,3 +17,4 @@ export const getBalance = () => api.get("/trade/balance").then((r) => r.data);
 export const getPositions = () => api.get("/trade/positions").then((r) => r.data);
 export const getSpotBalance = () => api.get("/trade/spot-balance").then((r) => r.data);
 export const getOpenOrders = () => api.get("/trade/open-orders").then((r) => r.data);
+export const getTradeHistory = (limit = 50) => api.get(`/trade/history?limit=${limit}`).then((r) => r.data);

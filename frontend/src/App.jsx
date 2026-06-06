@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import Navbar from "./components/Navbar";
 import Dashboard from "./components/Dashboard";
 import TradePage from "./components/TradePage";
+import Historical from "./components/Historical";
 
 export default function App() {
   return (
@@ -13,6 +14,7 @@ export default function App() {
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/trade" element={<TradePage />} />
+            <Route path="/historical" element={<Historical />} />
           </Routes>
         </div>
         <footer style={styles.footer}>
