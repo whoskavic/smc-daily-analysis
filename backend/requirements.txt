@@ -1,10 +1,39 @@
-fastapi==0.111.0
-uvicorn[standard]==0.30.1
-pydantic-settings==2.3.1
-sqlalchemy==2.0.31
-ccxt==4.3.43
-anthropic>=0.50.0
-apscheduler==3.10.4
-pytz==2024.1
-requests==2.32.3
-python-dotenv==1.0.1
+# SMC Auto-Trading Terminal — Python Dependencies
+# Install: pip install -r requirements.txt
+
+# ── Core Framework ────────────────────────────────────────────────────────────
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0
+pydantic>=2.7.0
+pydantic-settings>=2.2.0
+
+# ── Database ──────────────────────────────────────────────────────────────────
+sqlalchemy>=2.0.0
+
+# ── Scheduling ────────────────────────────────────────────────────────────────
+apscheduler>=3.10.4
+pytz>=2024.1
+
+# ── AI ────────────────────────────────────────────────────────────────────────
+anthropic>=0.28.0
+
+# ── Multi-Exchange (NEW) ──────────────────────────────────────────────────────
+# ccxt: unified crypto exchange library (Binance, Bybit, OKX, MEXC, + 100 more)
+ccxt>=4.3.0
+
+# ── HTTP Client ───────────────────────────────────────────────────────────────
+httpx>=0.27.0          # async HTTP (for CoinGecko, etc.)
+requests>=2.31.0       # sync HTTP (keep for backward compat)
+urllib3>=2.0.0
+
+# ── Data ──────────────────────────────────────────────────────────────────────
+# ccxt replaces direct Binance REST calls but keep for legacy binance_service.py
+# (will be migrated in Phase 2)
+
+# ── Phase 2 (SMC Engine) — install when ready ─────────────────────────────────
+# numpy>=1.26.0
+# pandas>=2.2.0
+
+# ── Phase 4 (Backtesting) — install when ready ────────────────────────────────
+# vectorbt>=0.26.0
+# plotly>=5.22.0
