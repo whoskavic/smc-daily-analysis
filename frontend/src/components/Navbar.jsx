@@ -11,6 +11,9 @@ export default function Navbar() {
         <NavLink to="/dashboard" style={navStyle} end>
           Dashboard
         </NavLink>
+        <NavLink to="/terminal" style={navStyle}>
+          Terminal
+        </NavLink>
         <NavLink to="/trade" style={navStyle}>
           Trade
         </NavLink>

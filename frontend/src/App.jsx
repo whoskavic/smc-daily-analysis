@@ -1,8 +1,11 @@
+import { Suspense, lazy } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import Navbar from "./components/Navbar";
 import Dashboard from "./components/Dashboard";
 import TradePage from "./components/TradePage";
 import Historical from "./components/Historical";
+
+const Terminal = lazy(() => import("./components/Terminal"));
 
 export default function App() {
   return (
@@ -15,6 +18,14 @@ export default function App() {
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/trade" element={<TradePage />} />
             <Route path="/historical" element={<Historical />} />
+            <Route
+              path="/terminal"
+              element={
+                <Suspense fallback={<div style={styles.loading}>Loading terminal…</div>}>
+                  <Terminal />
+                </Suspense>
+              }
+            />
           </Routes>
         </div>
         <footer style={styles.footer}>
@@ -35,6 +46,7 @@ const styles = {
     fontFamily: "system-ui, sans-serif",
   },
   content: { flex: 1, display: "flex", flexDirection: "column", minHeight: 0 },
+  loading: { padding: 24, color: "#8b949e", fontSize: 14 },
   footer: {
     textAlign: "center",
     padding: "8px",
