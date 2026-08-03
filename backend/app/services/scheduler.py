@@ -21,6 +21,7 @@ from apscheduler.triggers.cron import CronTrigger
 from app.config import settings
 from app.models.database import SessionLocal, DailyAnalysis, TradeHistory
 from app.services.session_utils import KillZones, current_session as _current_session, is_active_session as _is_active_session
+from app.services.ws_manager import manager as ws_manager
 
 logger = logging.getLogger(__name__)
 scheduler = AsyncIOScheduler()
@@ -79,6 +80,13 @@ async def run_daily_analysis():
             db.commit()
             db.refresh(record)
 
+            ws_manager.broadcast_nowait("analysis_update", {
+                "symbol": record.symbol,
+                "bias": record.bias,
+                "confidence": record.confidence,
+                "trade_direction": record.trade_direction,
+            })
+
             # Auto-execute if signal is strong enough
             execution = result.get("execution", {})
             if (
@@ -94,6 +102,14 @@ async def run_daily_analysis():
                     )
                     # Persist trade record
                     _save_trade_record(db, record, execution, trade_result)
+                    ws_manager.broadcast_nowait("trade_update", {
+                        "event": "opened",
+                        "symbol": symbol,
+                        "direction": execution.get("direction"),
+                        "confidence": execution.get("confidence"),
+                        "source": "daily_analysis",
+                        "mode": "paper" if settings.is_paper_mode() else "live",
+                    })
                 except Exception as e:
                     logger.error(f"[Scheduler] Auto-execute failed for {symbol}: {e}")
             else:
@@ -143,6 +159,11 @@ async def run_swarm_scan():
 
         session = _current_session()
         logger.info(f"[Swarm] Scanning {len(symbols)} tokens | session={session} | exchange={exchange_id}")
+        ws_manager.broadcast_nowait("swarm_scan_start", {
+            "total": len(symbols),
+            "session": session,
+            "exchange": exchange_id,
+        })
 
         # Count current positions (paper or live)
         if settings.is_paper_mode():
@@ -166,11 +187,13 @@ async def run_swarm_scan():
         async def scan_one(symbol: str):
             nonlocal skipped_no_setup
             async with semaphore:
+                ws_manager.broadcast_nowait("swarm_token_update", {"symbol": symbol, "status": "scanning"})
                 try:
                     snapshot = build_enriched_snapshot(symbol)
                     if not has_setup(snapshot):
                         skipped_no_setup += 1
                         logger.debug(f"[Swarm] {symbol}: no structural setup — skipping Claude call")
+                        ws_manager.broadcast_nowait("swarm_token_update", {"symbol": symbol, "status": "no_setup"})
                         return
                     result = run_analysis(snapshot)
                     execution = result.get("execution", {})
@@ -181,8 +204,18 @@ async def run_swarm_scan():
                         f"confidence={execution.get('confidence', 0)} "
                         f"decision={execution.get('decision', 'N/A')}"
                     )
+                    ws_manager.broadcast_nowait("swarm_token_update", {
+                        "symbol": symbol,
+                        "status": "analyzed",
+                        "bias": result.get("bias"),
+                        "confidence": execution.get("confidence", 0),
+                        "decision": execution.get("decision", "N/A"),
+                    })
                 except Exception as e:
                     logger.warning(f"[Swarm] {symbol} scan failed: {e}")
+                    ws_manager.broadcast_nowait("swarm_token_update", {
+                        "symbol": symbol, "status": "error", "error": str(e),
+                    })
 
         await asyncio.gather(*[scan_one(s) for s in symbols])
 
@@ -214,11 +247,25 @@ async def run_swarm_scan():
                     f"trade: {sym} {execution['direction']} "
                     f"confidence={execution['confidence']}%"
                 )
+                ws_manager.broadcast_nowait("trade_update", {
+                    "event": "opened",
+                    "symbol": sym,
+                    "direction": execution["direction"],
+                    "confidence": execution["confidence"],
+                    "source": "swarm",
+                    "mode": "paper" if settings.is_paper_mode() else "live",
+                })
                 executed += 1
             except Exception as e:
                 logger.error(f"[Swarm] Execute failed for {sym}: {e}")
 
         logger.info(f"[Swarm] Cycle complete — {executed} trades placed")
+        ws_manager.broadcast_nowait("swarm_scan_complete", {
+            "scanned": len(symbols),
+            "skipped_no_setup": skipped_no_setup,
+            "tradeable": len(tradeable),
+            "executed": executed,
+        })
 
     finally:
         _swarm_running = False
@@ -246,6 +293,14 @@ async def update_paper_positions():
                     f"[Paper] Position closed: {pos['symbol']} {pos['direction']} "
                     f"via {pos['close_reason']} | PnL={pos['pnl']:+.4f} USDT"
                 )
+                ws_manager.broadcast_nowait("trade_update", {
+                    "event": "closed",
+                    "symbol": pos["symbol"],
+                    "direction": pos["direction"],
+                    "close_reason": pos["close_reason"],
+                    "pnl": pos["pnl"],
+                    "mode": "paper",
+                })
     except Exception as e:
         logger.error(f"[Paper] Position update error: {e}", exc_info=True)
 

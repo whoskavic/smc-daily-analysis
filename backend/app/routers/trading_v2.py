@@ -11,6 +11,7 @@ from fastapi import APIRouter, HTTPException, Depends, Header
 from pydantic import BaseModel
 
 from app.config import settings
+from app.services.ws_manager import manager as ws_manager
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/trading", tags=["trading"])
@@ -162,6 +163,14 @@ async def execute_manual_trade(req: ManualTradeRequest):
 
     try:
         result = await execute_signal(signal, exchange_id)
+        ws_manager.broadcast_nowait("trade_update", {
+            "event": "opened",
+            "symbol": req.symbol,
+            "direction": req.direction.upper(),
+            "confidence": 100,
+            "source": "manual",
+            "mode": settings.trade_mode,
+        })
         return {
             "success": True,
             "mode": settings.trade_mode,
@@ -187,6 +196,15 @@ async def close_all_positions(req: CloseAllRequest):
     from app.services.exchange.paper_wallet import paper_close_all
     closed = await paper_close_all(reason=req.reason)
     total_pnl = sum(t.get("pnl", 0) for t in closed)
+
+    if closed:
+        ws_manager.broadcast_nowait("trade_update", {
+            "event": "closed_all",
+            "count": len(closed),
+            "total_pnl": round(total_pnl, 4),
+            "reason": req.reason,
+            "mode": "paper",
+        })
 
     return {
         "closed": len(closed),
