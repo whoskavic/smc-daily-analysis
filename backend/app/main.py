@@ -7,9 +7,11 @@ from app.models.database import init_db
 from app.routers import analysis, trade
 from app.routers.trading_v2 import router as trading_v2_router
 from app.routers.backtest import router as backtest_router
+from app.routers.ws import router as ws_router
 from app.services.scheduler import start_scheduler
 from app.services.exchange.paper_wallet import init_paper_wallet
 from app.services.exchange.token_discovery import get_top50_symbols
+from app.services.ws_log_handler import install_ws_log_handler
 
 logging.basicConfig(level=logging.INFO)
 
@@ -38,10 +40,12 @@ app.include_router(analysis.router)
 app.include_router(trade.router)
 app.include_router(trading_v2_router)
 app.include_router(backtest_router)
+app.include_router(ws_router)
 
 
 @app.on_event("startup")
 async def startup_event():
+    install_ws_log_handler()
     init_db()
     if settings.is_paper_mode():
         init_paper_wallet(starting_balance=settings.paper_starting_balance)
