@@ -20,33 +20,10 @@ from apscheduler.triggers.cron import CronTrigger
 
 from app.config import settings
 from app.models.database import SessionLocal, DailyAnalysis, TradeHistory
+from app.services.session_utils import KillZones, current_session as _current_session, is_active_session as _is_active_session
 
 logger = logging.getLogger(__name__)
 scheduler = AsyncIOScheduler()
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Kill zone helper (UTC)
-# ─────────────────────────────────────────────────────────────────────────────
-
-KillZones = {
-    "ASIA":         (0,  4),   # 00:00–04:00 UTC
-    "LONDON_OPEN":  (7,  10),  # 07:00–10:00 UTC  ← highest confluence
-    "NY_AM":        (13, 16),  # 13:00–16:00 UTC  ← highest confluence
-    "NY_PM":        (17, 20),  # 17:00–20:00 UTC
-}
-
-
-def _current_session() -> str:
-    """Return the name of the current trading session (UTC hour)."""
-    h = datetime.now(timezone.utc).hour
-    for name, (start, end) in KillZones.items():
-        if start <= h < end:
-            return name
-    return "DEAD"
-
-
-def _is_active_session() -> bool:
-    return _current_session() in ("LONDON_OPEN", "NY_AM", "NY_PM")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -55,7 +32,7 @@ def _is_active_session() -> bool:
 
 async def run_daily_analysis():
     """Full SMC analysis on watch_symbols at scheduled time."""
-    from app.services.binance_service import fetch_market_snapshot
+    from app.services.snapshot_builder import build_enriched_snapshot
     from app.services.claude_service import run_analysis
     from app.services.exchange.executor import execute_signal
 
@@ -74,7 +51,7 @@ async def run_daily_analysis():
                 continue
 
             logger.info(f"[Scheduler] Analyzing {symbol}...")
-            snapshot = fetch_market_snapshot(symbol)
+            snapshot = build_enriched_snapshot(symbol)
             result = run_analysis(snapshot)
 
             record = DailyAnalysis(
@@ -179,16 +156,22 @@ async def run_swarm_scan():
             logger.info(f"[Swarm] Max positions ({settings.max_concurrent_positions}) reached — scanning only, not executing")
 
         # Import here to avoid circular at module load
-        from app.services.binance_service import fetch_market_snapshot
+        from app.services.snapshot_builder import build_enriched_snapshot, has_setup
         from app.services.claude_service import run_analysis
 
         semaphore = asyncio.Semaphore(settings.swarm_concurrency)
         results = []
+        skipped_no_setup = 0
 
         async def scan_one(symbol: str):
+            nonlocal skipped_no_setup
             async with semaphore:
                 try:
-                    snapshot = fetch_market_snapshot(symbol)
+                    snapshot = build_enriched_snapshot(symbol)
+                    if not has_setup(snapshot):
+                        skipped_no_setup += 1
+                        logger.debug(f"[Swarm] {symbol}: no structural setup — skipping Claude call")
+                        return
                     result = run_analysis(snapshot)
                     execution = result.get("execution", {})
                     result["execution"] = execution
@@ -213,6 +196,7 @@ async def run_swarm_scan():
 
         logger.info(
             f"[Swarm] Scan complete: {len(symbols)} scanned, "
+            f"{skipped_no_setup} skipped (no structural setup), "
             f"{len(tradeable)} tradeable signals found"
         )
 
