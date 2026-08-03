@@ -82,6 +82,50 @@ async def get_balance():
         return {"mode": "live", **await get_account_balance(settings.active_exchange)}
 
 
+@router.get("/chart-data")
+async def get_chart_data(symbol: str, timeframe: str = "1h", limit: int = 200):
+    """
+    Candles + SMC overlay (order blocks, FVGs, BOS/CHoCH, liquidity, premium/
+    discount) for a single timeframe. Powers the Terminal UI chart (Phase 5c).
+    Read-only, no Claude API call — reuses the Phase 2 detectors directly.
+    """
+    from app.services.binance_service import fetch_ohlcv
+    from app.services import smc_engine
+
+    tf_map = {"15m": "15m", "1h": "1H", "4h": "4H", "1d": "1D"}
+    label = tf_map.get(timeframe.lower(), timeframe.upper())
+
+    try:
+        candles = fetch_ohlcv(symbol, timeframe=timeframe, limit=limit)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Failed to fetch candles: {e}")
+
+    if not candles:
+        return {"symbol": symbol, "timeframe": timeframe, "candles": [], "smc_levels": {"key_levels": [], "confluence": {"score": 0, "factors": {}, "conflicts": []}}}
+
+    swings = smc_engine.detect_swings(candles)
+    bos_events = smc_engine.detect_bos_choch(candles, swings, tf=label)
+
+    key_levels = []
+    key_levels += smc_engine.detect_order_blocks(candles, bos_events, tf=label)
+    key_levels += smc_engine.detect_fair_value_gaps(candles, tf=label)
+    key_levels += smc_engine.detect_liquidity_zones(candles, swings, tf=label)
+    key_levels += smc_engine.premium_discount_levels(candles, tf=label)
+    key_levels += [
+        {"type": e["type"], "price": e["price"], "low": None, "high": None, "tf": label, "strength": e["strength"]}
+        for e in bos_events
+    ]
+
+    confluence = smc_engine.score_confluence({label: candles})
+
+    return {
+        "symbol": symbol,
+        "timeframe": timeframe,
+        "candles": candles,
+        "smc_levels": {"key_levels": key_levels, "confluence": confluence},
+    }
+
+
 @router.get("/positions")
 async def get_positions():
     """Get all open positions (paper or live)."""
