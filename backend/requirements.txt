@@ -30,9 +30,9 @@ urllib3>=2.0.0
 # ccxt replaces direct Binance REST calls but keep for legacy binance_service.py
 # (will be migrated in Phase 2)
 
-# ── Phase 2 (SMC Engine) — install when ready ─────────────────────────────────
-# numpy>=1.26.0
-# pandas>=2.2.0
+# ── Phase 2 (SMC Engine) ──────────────────────────────────────────────────────
+numpy>=1.26.0
+pandas>=2.2.0
 
 # ── Phase 4 (Backtesting) — install when ready ────────────────────────────────
 # vectorbt>=0.26.0
