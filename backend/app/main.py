@@ -6,6 +6,7 @@ from app.config import settings
 from app.models.database import init_db
 from app.routers import analysis, trade
 from app.routers.trading_v2 import router as trading_v2_router
+from app.routers.backtest import router as backtest_router
 from app.services.scheduler import start_scheduler
 from app.services.exchange.paper_wallet import init_paper_wallet
 from app.services.exchange.token_discovery import get_top50_symbols
@@ -36,6 +37,7 @@ app.add_middleware(
 app.include_router(analysis.router)
 app.include_router(trade.router)
 app.include_router(trading_v2_router)
+app.include_router(backtest_router)
 
 
 @app.on_event("startup")

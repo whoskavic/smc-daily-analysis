@@ -83,6 +83,37 @@ class CandleCache(Base):
     volume = Column(Float)
 
 
+class BacktestRun(Base):
+    __tablename__ = "backtest_runs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    symbol = Column(String, index=True)
+    since = Column(DateTime)
+    until = Column(DateTime)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    init_cash = Column(Float)
+    fees_pct = Column(Float)
+    slippage_pct = Column(Float)
+    claude_sample_pct = Column(Float, default=0.0)
+
+    bars_analyzed = Column(Integer)
+    signals_generated = Column(Integer)
+    total_trades = Column(Integer)
+
+    final_equity = Column(Float, nullable=True)
+    total_return_pct = Column(Float)
+    win_rate_pct = Column(Float)
+    sharpe_ratio = Column(Float)
+    max_drawdown_pct = Column(Float)
+    profit_factor = Column(Float, nullable=True)
+
+    trades = Column(JSON)          # list of trade dicts
+    equity_curve = Column(JSON)    # downsampled [{timestamp, equity}, ...]
+    claude_sample = Column(JSON)   # rule-vs-Claude comparison, if sampled
+    note = Column(Text, nullable=True)
+
+
 def _migrate_add_columns():
     """Add new columns to existing tables without dropping data."""
     import sqlite3
