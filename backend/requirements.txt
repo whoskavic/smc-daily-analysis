@@ -34,6 +34,6 @@ urllib3>=2.0.0
 numpy>=1.26.0
 pandas>=2.2.0
 
-# ── Phase 4 (Backtesting) — install when ready ────────────────────────────────
-# vectorbt>=0.26.0
-# plotly>=5.22.0
+# ── Phase 4 (Backtesting) ────────────────────────────────────────────────────
+vectorbt>=1.1.0
+plotly>=5.22.0
