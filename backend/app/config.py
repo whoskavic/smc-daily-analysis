@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     # Binance (existing — keep backward-compatible)
     binance_api_key: str = Field("", env="BINANCE_API_KEY")
     binance_api_secret: str = Field("", env="BINANCE_API_SECRET")
+    binance_testnet: bool = Field(False, env="BINANCE_TESTNET")
 
     # Bybit
     bybit_api_key: str = Field("", env="BYBIT_API_KEY")
