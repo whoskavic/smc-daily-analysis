@@ -19,21 +19,17 @@ anthropic>=0.28.0
 
 # ── Multi-Exchange (NEW) ──────────────────────────────────────────────────────
 # ccxt: unified crypto exchange library (Binance, Bybit, OKX, MEXC, + 100 more)
-ccxt>=4.3.0
+ccxt==4.3.43            # pinned: same as live machine
 
 # ── HTTP Client ───────────────────────────────────────────────────────────────
 httpx>=0.27.0          # async HTTP (for CoinGecko, etc.)
 requests>=2.31.0       # sync HTTP (keep for backward compat)
 urllib3>=2.0.0
 
-# ── Data ──────────────────────────────────────────────────────────────────────
-# ccxt replaces direct Binance REST calls but keep for legacy binance_service.py
-# (will be migrated in Phase 2)
-
 # ── Phase 2 (SMC Engine) ──────────────────────────────────────────────────────
 numpy>=1.26.0
 pandas>=2.2.0
 
 # ── Phase 4 (Backtesting) ────────────────────────────────────────────────────
-vectorbt>=1.1.0
-plotly>=5.22.0
+vectorbt==1.1.0
+plotly>=5.22.0,<6      # vectorbt 1.1.0 needs scattermapbox, removed in plotly 6+
