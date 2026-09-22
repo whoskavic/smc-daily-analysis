@@ -44,6 +44,123 @@ _NEUTRAL_DIAGNOSTICS = {
     "r_by_sl_bucket": {label: {"count": 0, "expectancy_r": 0.0} for label, _ in _SL_BUCKETS},
 }
 
+# Each timeframe is fetched from `since - lookback` instead of exactly
+# `since`, so smc_replay's rolling HTF windows (smc_replay.WINDOW_*) are
+# already closed-or-forming — no lookahead — by the time the walk-forward
+# reaches the first in-range bar, matching what live always sees (its
+# snapshot windows are never "cold"). Derived from smc_replay's own window
+# constants so the two can't drift apart; the added margin covers weekend/
+# exchange-downtime gaps and the forming-candle aggregation at the boundary.
+_LOOKBACK_DELTAS = {
+    "1d": timedelta(days=smc_replay.WINDOW_1D + 2),
+    "4h": timedelta(hours=smc_replay.WINDOW_4H * 4) + timedelta(days=1),
+    "1h": timedelta(hours=smc_replay.WINDOW_1H) + timedelta(days=1),
+    "15m": timedelta(minutes=smc_replay.WINDOW_15M * 15) + timedelta(days=1),
+}
+
+# The lookback span a timeframe actually needs to fill its replay window —
+# _LOOKBACK_DELTAS minus the safety margin — used only to judge whether a
+# fetch came back "complete" (see _tf_lookback_status). One bar of tolerance
+# absorbs exchange/cache boundary rounding.
+_REQUIRED_SPAN = {
+    "1d": timedelta(days=smc_replay.WINDOW_1D),
+    "4h": timedelta(hours=smc_replay.WINDOW_4H * 4),
+    "1h": timedelta(hours=smc_replay.WINDOW_1H),
+    "15m": timedelta(minutes=smc_replay.WINDOW_15M * 15),
+}
+_TF_BAR_DURATION = {
+    "1d": timedelta(days=1), "4h": timedelta(hours=4),
+    "1h": timedelta(hours=1), "15m": timedelta(minutes=15),
+}
+
+
+def _tf_lookback_status(candles: List[Dict], tf: str, since: datetime) -> Dict:
+    """Whether `candles` actually reaches back far enough to fill `tf`'s
+    full replay window (WINDOW_* bars, no safety margin — one bar of
+    tolerance) before `since`. Checked per timeframe because
+    data_loader's cache accepts a >=95%-coverage hit: a cache holding only
+    the in-range portion (no real lookback) can still pass that check for a
+    long-enough backtest, so a single overall completeness signal isn't
+    reliable — each timeframe's own earliest candle must be verified."""
+    if not candles:
+        return {"earliest": None, "complete": False}
+    earliest = datetime.fromisoformat(candles[0]["timestamp"])
+    required_earliest = since - _REQUIRED_SPAN[tf] + _TF_BAR_DURATION[tf]
+    return {"earliest": earliest.isoformat(), "complete": earliest <= required_earliest}
+
+
+def _fetch_tf_with_lookback(symbol: str, tf: str, since: datetime, until: datetime) -> tuple:
+    """Fetches one timeframe from `since - lookback`; if the result doesn't
+    actually reach back far enough (stale/partial cache, or a genuinely
+    cold cache), refetches once with use_cache=False before giving up."""
+    candles = data_loader.fetch_historical_ohlcv(symbol, tf, since - _LOOKBACK_DELTAS[tf], until)
+    status = _tf_lookback_status(candles, tf, since)
+    if not status["complete"]:
+        candles = data_loader.fetch_historical_ohlcv(
+            symbol, tf, since - _LOOKBACK_DELTAS[tf], until, use_cache=False,
+        )
+        status = _tf_lookback_status(candles, tf, since)
+        if not status["complete"]:
+            logger.warning(
+                f"[Backtest] {symbol} {tf}: insufficient lookback history before "
+                f"{since.isoformat()} (earliest={status['earliest']}) even after a "
+                f"fresh exchange pull — that timeframe's replay window may start partially filled"
+            )
+    return candles, status
+
+
+def _fetch_with_lookback(symbol: str, since: datetime, until: datetime) -> Dict:
+    """
+    Fetches 15m/1h/4h/1d from `since - lookback` (see _LOOKBACK_DELTAS) so
+    smc_replay's HTF windows are already full by the time the walk-forward
+    reaches the first bar with timestamp >= since. Everything downstream of
+    the replay loop (decisions, signals, trades, equity curve, metrics) is
+    still scoped to bars >= since — the extra history is context only, used
+    to warm up smc_replay's rolling windows.
+
+    Each timeframe's lookback is verified independently (_tf_lookback_status)
+    and refetched once bypassing the cache if short — data_loader's cache
+    accepts a >=95%-coverage hit, which can silently return a slice with no
+    real lookback on a long-enough backtest. If a timeframe still falls
+    short after that (the exchange genuinely lacks the history — a
+    freshly-listed symbol, or `since` at the start of available history),
+    its status stays incomplete and a warning names it.
+
+    Returns a dict: candles_15m/1h/4h/1d, warmup_bars (the candles_15m index
+    of the first bar with timestamp >= since — computed from whatever 15m
+    history is available, even if short of a full window), lookback_start
+    (ISO, the 15m fetch's actual earliest candle), lookback_complete (True
+    iff every timeframe's lookback is complete), lookback_by_tf (per-
+    timeframe {"earliest": iso|None, "complete": bool}).
+    """
+    candles_by_tf: Dict[str, List[Dict]] = {}
+    lookback_by_tf: Dict[str, Dict] = {}
+    for tf in ("15m", "1h", "4h", "1d"):
+        candles_by_tf[tf], lookback_by_tf[tf] = _fetch_tf_with_lookback(symbol, tf, since, until)
+
+    candles_15m = candles_by_tf["15m"]
+    earliest_15m = datetime.fromisoformat(candles_15m[0]["timestamp"]) if candles_15m else None
+    has_any_lookback = earliest_15m is not None and earliest_15m < since
+
+    if has_any_lookback:
+        warmup_bars = next(
+            (idx for idx, c in enumerate(candles_15m) if datetime.fromisoformat(c["timestamp"]) >= since),
+            len(candles_15m),
+        )
+        lookback_start = earliest_15m.isoformat()
+    else:
+        warmup_bars = min(smc_replay.DEFAULT_WARMUP_BARS, len(candles_15m))
+        lookback_start = since.isoformat()
+
+    return {
+        "candles_15m": candles_by_tf["15m"], "candles_1h": candles_by_tf["1h"],
+        "candles_4h": candles_by_tf["4h"], "candles_1d": candles_by_tf["1d"],
+        "warmup_bars": warmup_bars,
+        "lookback_start": lookback_start,
+        "lookback_complete": all(s["complete"] for s in lookback_by_tf.values()),
+        "lookback_by_tf": lookback_by_tf,
+    }
+
 
 def run_backtest(
     symbol: str,
@@ -114,21 +231,27 @@ def run_backtest(
     signal_config = signal_config or SignalConfig()
     until = until or datetime.now(tz=since.tzinfo)
 
-    candles_15m = data_loader.fetch_historical_ohlcv(symbol, "15m", since, until)
-    candles_1h = data_loader.fetch_historical_ohlcv(symbol, "1h", since, until)
-    candles_4h = data_loader.fetch_historical_ohlcv(symbol, "4h", since, until)
-    candles_1d = data_loader.fetch_historical_ohlcv(symbol, "1d", since, until)
+    fetch = _fetch_with_lookback(symbol, since, until)
+    candles_15m = fetch["candles_15m"]
+    candles_1h = fetch["candles_1h"]
+    candles_4h = fetch["candles_4h"]
+    candles_1d = fetch["candles_1d"]
+    warmup_bars = fetch["warmup_bars"]
+    lookback_start = fetch["lookback_start"]
+    lookback_complete = fetch["lookback_complete"]
+    lookback_by_tf = fetch["lookback_by_tf"]
 
-    if len(candles_15m) < MIN_BARS_REQUIRED:
+    bars_in_range = len(candles_15m) - warmup_bars
+    if bars_in_range < MIN_BARS_REQUIRED:
         raise ValueError(
             f"Not enough {symbol} 15m history in range to backtest "
-            f"({len(candles_15m)} bars, need >= {MIN_BARS_REQUIRED})"
+            f"({bars_in_range} bars, need >= {MIN_BARS_REQUIRED})"
         )
 
     from app.config import settings
 
     decision_indices = _decision_bar_indices(
-        candles_15m, smc_replay.DEFAULT_WARMUP_BARS, decision_schedule,
+        candles_15m, warmup_bars, decision_schedule,
         settings.timezone, settings.daily_analysis_time,
     )
     decision_indices_set = set(decision_indices)
@@ -146,8 +269,14 @@ def run_backtest(
     decision_bar_counter = 0
     consecutive_fallback_failures = 0
 
-    for snap in smc_replay.replay(candles_15m, candles_1h, candles_4h, candles_1d):
-        bias_by_bar[snap["bar_index"]] = signal_simulator.primary_bias(
+    # bar_index below is rebased to be 0-indexed at the first in-range bar
+    # (snap["bar_index"] - warmup_bars), so trade_simulator/_simulate_portfolio
+    # and bias_by_bar share one consistent indexing with the in-range-only
+    # candles array (candles_in_range) they're given below — replay() itself
+    # only ever yields bar_index >= warmup_bars, so this is always >= 0.
+    for snap in smc_replay.replay(candles_15m, candles_1h, candles_4h, candles_1d, warmup_bars=warmup_bars):
+        rel_index = snap["bar_index"] - warmup_bars
+        bias_by_bar[rel_index] = signal_simulator.primary_bias(
             snap["smc_levels"].get("confluence", {})
         )
 
@@ -188,17 +317,23 @@ def run_backtest(
         if not has_setup or sig["decision"] != "TRADE":
             continue
 
-        signals.append({"bar_index": snap["bar_index"], "timestamp": snap["timestamp"], **sig})
+        signals.append({"bar_index": rel_index, "timestamp": snap["timestamp"], **sig})
+
+    # candles_in_range excludes the lookback warmup region — trades, the
+    # equity curve and all metrics are computed on this alone, matching the
+    # rebased bar_index used for signals/bias_by_bar above.
+    candles_in_range = candles_15m[warmup_bars:]
 
     if not signals:
         empty_cfg = sim_config or (_default_sim_config(init_cash, slippage_pct) if sim_mode == "event" else None)
         return _empty_result(
-            symbol, since, until, len(candles_15m), sampled, sim_mode, empty_cfg,
+            symbol, since, until, len(candles_in_range), sampled, sim_mode, empty_cfg,
             decision_schedule, total_decision_bars, signal_config,
+            lookback_start, lookback_complete, lookback_by_tf,
         )
 
     if sim_mode == "vbt_legacy":
-        stats = _simulate_portfolio(candles_15m, signals, init_cash, fees_pct, slippage_pct)
+        stats = _simulate_portfolio(candles_in_range, signals, init_cash, fees_pct, slippage_pct)
         stats.setdefault("expectancy_r", 0.0)
         stats.setdefault("avg_win_r", 0.0)
         stats.setdefault("avg_loss_r", 0.0)
@@ -206,7 +341,7 @@ def run_backtest(
         stats.update(_NEUTRAL_DIAGNOSTICS)
     else:
         cfg = sim_config or _default_sim_config(init_cash, slippage_pct)
-        stats = trade_simulator.simulate(candles_15m, signals, bias_by_bar, cfg)
+        stats = trade_simulator.simulate(candles_in_range, signals, bias_by_bar, cfg)
         sim_config = cfg
         stats.update(_compute_diagnostics(stats["trades"]))
 
@@ -214,7 +349,10 @@ def run_backtest(
         "symbol": symbol,
         "since": since.isoformat(),
         "until": until.isoformat(),
-        "bars_analyzed": len(candles_15m),
+        "lookback_start": lookback_start,
+        "lookback_complete": lookback_complete,
+        "lookback_by_tf": lookback_by_tf,
+        "bars_analyzed": len(candles_in_range),
         "signals_generated": len(signals),
         "claude_sample": sampled,
         "sim_mode": sim_mode,
@@ -660,9 +798,14 @@ def _empty_result(
     sim_mode: str = "event", sim_config: Optional[SimConfig] = None,
     decision_schedule: str = "every_bar", decision_bars: int = 0,
     signal_config: Optional[SignalConfig] = None,
+    lookback_start: Optional[str] = None, lookback_complete: bool = True,
+    lookback_by_tf: Optional[Dict] = None,
 ) -> Dict:
     return {
         "symbol": symbol, "since": since.isoformat(), "until": until.isoformat(),
+        "lookback_start": lookback_start if lookback_start is not None else since.isoformat(),
+        "lookback_complete": lookback_complete,
+        "lookback_by_tf": lookback_by_tf or {},
         "bars_analyzed": bars, "signals_generated": 0,
         "final_equity": None, "total_return_pct": 0.0, "win_rate_pct": 0.0,
         "sharpe_ratio": 0.0, "max_drawdown_pct": 0.0, "profit_factor": 0.0,

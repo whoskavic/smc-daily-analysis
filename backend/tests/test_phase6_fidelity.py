@@ -727,7 +727,7 @@ class TestEngineSimModeDispatch(unittest.TestCase):
             }
 
     def _run_with_mocks(self, sim_mode):
-        n = 250
+        n = 400  # >= MIN_BARS_REQUIRED(200) + DEFAULT_WARMUP_BARS(120) after the fallback-warmup subtraction
         candles = _flat(n)
         candles[100] = C(_ts(100), 102, 103, 99.5, 100.5)  # fills the signal at bar 96
 

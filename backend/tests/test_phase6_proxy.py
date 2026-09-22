@@ -342,16 +342,16 @@ class TestClaudeSampling(unittest.TestCase):
         }}
 
     def test_claude_sample_max_evenly_spaced_includes_no_trade_bars(self):
-        n = 250
+        n = 320  # decision_bars = n - warmup(120) = 200 == MIN_BARS_REQUIRED (in-range bars)
         candles = _flat(n)
 
-        # decision_bars for every_bar over n=250, warmup=120 -> 130 (verified).
-        # evenly_spaced_positions(130, 5) == {0, 26, 52, 78, 104} (verified).
+        # decision_bars for every_bar over n=320, warmup=120 -> 200 (verified).
+        # evenly_spaced_positions(200, 5) == {0, 40, 80, 120, 160} (verified).
         call_idx = [-1]
 
         def fake_rule_based_signal(smc_levels, current_price, **kwargs):
             call_idx[0] += 1
-            if call_idx[0] == 26:
+            if call_idx[0] == 40:
                 return {"decision": "NO_TRADE", "direction": None, "entry_price": None,
                         "stop_loss": None, "tp1": None, "tp2": None,
                         "confidence": 10, "rr_ratio": None, "no_trade_reason": "x"}
@@ -378,12 +378,12 @@ class TestClaudeSampling(unittest.TestCase):
                 claude_sample_max=5,
             )
 
-        self.assertEqual(result["decision_bars"], 130)
+        self.assertEqual(result["decision_bars"], 200)
         self.assertEqual(len(claude_calls), 5)
         self.assertEqual(len(result["claude_sample"]), 5)
 
         no_trade_samples = [s for s in result["claude_sample"] if s.get("rule_decision") == "NO_TRADE"]
-        self.assertEqual(len(no_trade_samples), 1)  # position 26 was forced to rule NO_TRADE
+        self.assertEqual(len(no_trade_samples), 1)  # position 40 was forced to rule NO_TRADE
 
         # each record carries both sides' prices and sl_pct
         for s in result["claude_sample"]:
@@ -393,7 +393,7 @@ class TestClaudeSampling(unittest.TestCase):
                 self.assertIn(key, s)
 
     def test_claude_call_exception_recorded_as_error_and_run_continues(self):
-        n = 250
+        n = 320  # >= MIN_BARS_REQUIRED(200) + warmup(120) (in-range bars)
         candles = _flat(n)
         candles[125] = C(_ts(125), 102, 103, 99.5, 100.5)  # gives the proxy something to fill
         # (before the identical repeated setup's TTL cancellation would permanently block it)
@@ -458,7 +458,7 @@ class TestClaudeSampling(unittest.TestCase):
             )
 
     def test_sampling_does_not_change_proxy_metrics(self):
-        n = 250
+        n = 320  # >= MIN_BARS_REQUIRED(200) + warmup(120) (in-range bars)
         candles = _flat(n)
         candles[130] = C(_ts(130), 102, 103, 99.5, 100.5)  # gives the proxy something to fill
 
@@ -515,7 +515,7 @@ class TestClaudeSampling(unittest.TestCase):
         }}
 
     def test_claude_fallback_return_recorded_as_error_and_excluded_from_stats(self):
-        n = 250
+        n = 320  # >= MIN_BARS_REQUIRED(200) + warmup(120) (in-range bars)
         candles = _flat(n)
         candles[125] = C(_ts(125), 102, 103, 99.5, 100.5)  # gives the proxy something to fill
 
@@ -559,7 +559,7 @@ class TestClaudeSampling(unittest.TestCase):
         self.assertEqual(cvp["claude_trade_n"], 1)
 
     def test_three_consecutive_fallback_failures_raises(self):
-        n = 250
+        n = 320  # >= MIN_BARS_REQUIRED(200) + warmup(120) (in-range bars)
         candles = _flat(n)
 
         def fake_rule_based_signal(smc_levels, current_price, **kwargs):
@@ -587,7 +587,7 @@ class TestClaudeSampling(unittest.TestCase):
         self.assertIn("bad ANTHROPIC_API_KEY", str(ctx.exception))
 
     def test_agree_direction_none_unless_both_trade(self):
-        n = 250
+        n = 320  # >= MIN_BARS_REQUIRED(200) + warmup(120) (in-range bars)
         candles = _flat(n)
         candles[125] = C(_ts(125), 102, 103, 99.5, 100.5)
 
@@ -619,7 +619,7 @@ class TestClaudeSampling(unittest.TestCase):
         self.assertFalse(sample["agree_decision"])
 
     def test_claude_vs_proxy_sl_pct_stats_populated_for_both_trade_samples(self):
-        n = 250
+        n = 320  # >= MIN_BARS_REQUIRED(200) + warmup(120) (in-range bars)
         candles = _flat(n)
         candles[125] = C(_ts(125), 102, 103, 99.5, 100.5)
 
@@ -678,7 +678,7 @@ class TestHistoricalTicker(unittest.TestCase):
         self.assertAlmostEqual(ticker["change_pct"], expected_change_pct, places=6)
 
     def test_funding_rate_and_fear_greed_stay_none_end_to_end(self):
-        n = 250
+        n = 320  # >= MIN_BARS_REQUIRED(200) + warmup(120) (in-range bars)
         candles = _flat(n)
         candles[125] = C(_ts(125), 102, 103, 99.5, 100.5)
 
