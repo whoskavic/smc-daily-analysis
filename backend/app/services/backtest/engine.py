@@ -156,6 +156,7 @@ def _sim_config_as_dict(cfg: Optional[SimConfig]) -> Optional[Dict]:
         "fixed_risk_usdt": cfg.fixed_risk_usdt,
         "fixed_margin_usdt": cfg.fixed_margin_usdt,
         "leverage": cfg.leverage,
+        "allow_setup_reentry": cfg.allow_setup_reentry,
     }
 
 

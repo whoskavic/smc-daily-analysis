@@ -124,6 +124,7 @@ def _render_summary_md(result: dict, args: argparse.Namespace) -> str:
         lines.append(f"| ignored_in_position | {orders['ignored_in_position']} |")
         lines.append(f"| duplicate_signals | {orders.get('duplicate_signals', 0)} |")
         lines.append(f"| margin_capped_trades | {orders.get('margin_capped_trades', 0)} |")
+        lines.append(f"| setup_reused_blocked | {orders.get('setup_reused_blocked', 0)} |")
         lines.append("")
 
     trades = result.get("trades", [])

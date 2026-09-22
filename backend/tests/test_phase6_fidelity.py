@@ -357,6 +357,82 @@ class TestOrderLifecycle(unittest.TestCase):
         self.assertEqual(r["orders"]["placed"], 1)
 
 
+class TestSetupReentryBlocking(unittest.TestCase):
+    """A (direction, entry, SL, TP1, TP2) setup is placed at most once by
+    default, however the earlier order was resolved — cancelled (ttl,
+    tp1_before_fill, bias_flip, replaced) or filled and closed."""
+
+    def test_ttl_cycle_blocks_all_later_identical_signals(self):
+        # 60 identical signals (bars 2-61), price never touches entry. Only
+        # the very first is ever placed; it expires via ttl exactly once;
+        # every other signal bar is either a duplicate_signal (while that
+        # first order is still pending) or setup_reused_blocked (after it's
+        # gone) — never a fresh placement.
+        n = 70
+        candles = _flat(n)
+        signals = [_long_signal(b) for b in range(2, 62)]  # bars 2..61, identical params
+        bias = {i: "bullish" for i in range(n)}
+        r = trade_simulator.simulate(candles, signals, bias, SimConfig(order_ttl_bars=5))
+        self.assertEqual(r["orders"]["placed"], 1)
+        self.assertEqual(r["orders"]["cancelled"]["ttl"], 1)
+        self.assertEqual(r["orders"]["cancelled"]["replaced"], 0)
+        self.assertEqual(
+            r["orders"]["duplicate_signals"] + r["orders"]["setup_reused_blocked"], 59
+        )
+        self.assertEqual(r["total_trades"], 0)
+
+    def test_tp1_before_fill_then_identical_signal_not_replaced(self):
+        n = 20
+        candles = _flat(n)
+        candles[4] = C(_ts(4), 102, 106, 101, 102)  # reaches tp1(105) without ever touching entry(100)
+        signals = [_long_signal(2), _long_signal(6)]  # identical setup, re-fires after cancellation
+        bias = {i: "bullish" for i in range(n)}
+        r = trade_simulator.simulate(candles, signals, bias, SimConfig(order_ttl_bars=20))
+        self.assertEqual(r["orders"]["placed"], 1)
+        self.assertEqual(r["orders"]["cancelled"]["tp1_before_fill"], 1)
+        self.assertEqual(r["orders"]["setup_reused_blocked"], 1)
+        self.assertEqual(r["total_trades"], 0)
+
+    def test_sl_then_identical_signal_no_second_trade(self):
+        n = 20
+        candles = _flat(n)
+        candles[4] = C(_ts(4), 102, 103, 99.5, 100.5)  # fill
+        candles[5] = C(_ts(5), 100, 101, 94, 95)        # SL hit, position closes
+        signals = [_long_signal(2), _long_signal(8)]    # identical setup, re-fires after the trade closed
+        bias = {i: "bullish" for i in range(n)}
+        r = trade_simulator.simulate(candles, signals, bias, SimConfig(order_ttl_bars=20))
+        self.assertEqual(r["orders"]["placed"], 1)
+        self.assertEqual(r["total_trades"], 1)
+        self.assertEqual(r["trades"][0]["outcome"], "sl")
+        self.assertEqual(r["orders"]["setup_reused_blocked"], 1)
+
+    def test_different_entry_after_cancel_is_placed_normally(self):
+        n = 20
+        candles = _flat(n)  # never touches either entry
+        signals = [_long_signal(2), _long_signal(8, entry=150, sl=145, tp1=160, tp2=170)]
+        bias = {i: "bullish" for i in range(n)}
+        r = trade_simulator.simulate(candles, signals, bias, SimConfig(order_ttl_bars=3))
+        self.assertEqual(r["orders"]["placed"], 2)
+        self.assertEqual(r["orders"]["setup_reused_blocked"], 0)
+
+    def test_allow_setup_reentry_restores_old_behavior(self):
+        n = 70
+        candles = _flat(n)
+        signals = [_long_signal(b) for b in range(2, 62)]
+        bias = {i: "bullish" for i in range(n)}
+        cfg = SimConfig(order_ttl_bars=5, allow_setup_reentry=True)
+        r = trade_simulator.simulate(candles, signals, bias, cfg)
+        self.assertEqual(r["orders"]["setup_reused_blocked"], 0)
+        self.assertGreater(r["orders"]["placed"], 1)  # re-placed after each ttl cycle
+        self.assertGreaterEqual(r["orders"]["cancelled"]["ttl"], 1)
+
+    def test_allow_setup_reentry_exposed_in_sim_config_output(self):
+        cfg_dict = engine._sim_config_as_dict(SimConfig(allow_setup_reentry=True))
+        self.assertTrue(cfg_dict["allow_setup_reentry"])
+        cfg_dict_default = engine._sim_config_as_dict(SimConfig())
+        self.assertFalse(cfg_dict_default["allow_setup_reentry"])
+
+
 class TestPositionEvents(unittest.TestCase):
     def test_sl_and_tp1_same_bar_prioritizes_sl(self):
         n = 20

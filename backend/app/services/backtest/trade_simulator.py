@@ -39,6 +39,11 @@ class SimConfig:
     fixed_risk_usdt: float = 3.0      # USDT lost if SL hits
     fixed_margin_usdt: float = 3.0    # USDT margin per trade (risk then varies with SL distance)
     leverage: int = 10
+    # A setup (direction, entry, SL, TP1, TP2) is placed at most once by
+    # default — a later identical signal is blocked (orders.setup_reused_blocked)
+    # regardless of what happened to the earlier order (filled and closed,
+    # or cancelled for any reason). True restores the old always-re-place behavior.
+    allow_setup_reentry: bool = False
 
     def __post_init__(self):
         if self.sizing_mode not in _SIZING_MODES:
@@ -134,18 +139,30 @@ def _is_opposite_bias(bias: Optional[str], direction: str) -> bool:
     return bias == "bullish"
 
 
-def _is_duplicate_signal(order: Dict, sig: Dict) -> bool:
-    """Same direction and same entry/SL/TP1/TP2 as the pending order — the
-    rule-based signal re-firing on every bar a setup persists, not a genuinely
-    new setup."""
-    if order["direction"] != sig["direction"]:
+def _same_setup(a: Dict, b: Dict) -> bool:
+    """Same direction and same entry/SL/TP1/TP2 — the setup key shared by
+    duplicate-signal detection (against the currently pending order) and
+    setup-reuse blocking (against every setup ever placed)."""
+    if a["direction"] != b["direction"]:
         return False
     return (
-        math.isclose(order["entry_price"], sig["entry_price"], rel_tol=1e-9)
-        and math.isclose(order["stop_loss"], sig["stop_loss"], rel_tol=1e-9)
-        and math.isclose(order["tp1"], sig["tp1"], rel_tol=1e-9)
-        and math.isclose(order["tp2"], sig["tp2"], rel_tol=1e-9)
+        math.isclose(a["entry_price"], b["entry_price"], rel_tol=1e-9)
+        and math.isclose(a["stop_loss"], b["stop_loss"], rel_tol=1e-9)
+        and math.isclose(a["tp1"], b["tp1"], rel_tol=1e-9)
+        and math.isclose(a["tp2"], b["tp2"], rel_tol=1e-9)
     )
+
+
+def _is_duplicate_signal(order: Dict, sig: Dict) -> bool:
+    """Same setup as the pending order — the rule-based signal re-firing on
+    every bar a setup persists, not a genuinely new setup."""
+    return _same_setup(order, sig)
+
+
+def _matches_any_setup(sig: Dict, placed_setups: List[Dict]) -> bool:
+    """True if `sig` is the same setup as any setup ever placed (filled,
+    cancelled, or still pending/open) — used to block re-placing it."""
+    return any(_same_setup(setup, sig) for setup in placed_setups)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -211,7 +228,11 @@ def simulate(
         "cancelled": {"replaced": 0, "bias_flip": 0, "tp1_before_fill": 0, "ttl": 0},
         "ignored_in_position": 0,
         "duplicate_signals": 0,
+        "setup_reused_blocked": 0,
     }
+    # Every setup ever placed (filled-and-closed or cancelled for any
+    # reason) — a later identical signal is blocked unless allow_setup_reentry.
+    placed_setups: List[Dict] = []
 
     def _new_order(sig: Dict, placed_bar: int) -> Dict:
         return {
@@ -322,14 +343,24 @@ def simulate(
                     order_counts["duplicate_signals"] += 1
                     consumed_signal = True
 
+                is_reuse_blocked = (
+                    not config.allow_setup_reentry
+                    and sig_here is not None and not is_dup
+                    and _matches_any_setup(sig_here, placed_setups)
+                )
+                if is_reuse_blocked:
+                    order_counts["setup_reused_blocked"] += 1
+                    consumed_signal = True
+
                 if config.cancel_on_tp1_before_fill and _reached_tp1(order, bar):
                     order_counts["cancelled"]["tp1_before_fill"] += 1
                     state_kind = None
                     order = None
-                elif sig_here is not None and not is_dup:
+                elif sig_here is not None and not is_dup and not is_reuse_blocked:
                     order_counts["cancelled"]["replaced"] += 1
                     order = _new_order(sig_here, placed_bar=j)
                     order_counts["placed"] += 1
+                    placed_setups.append(order)
                     consumed_signal = True
                 elif config.cancel_on_bias_flip and _is_opposite_bias(bias_by_bar.get(j), order["direction"]):
                     order_counts["cancelled"]["bias_flip"] += 1
@@ -387,9 +418,13 @@ def simulate(
                         position = None
 
         if state_kind is None and sig_here is not None and not consumed_signal:
-            order = _new_order(sig_here, placed_bar=j)
-            order_counts["placed"] += 1
-            state_kind = "PENDING"
+            if not config.allow_setup_reentry and _matches_any_setup(sig_here, placed_setups):
+                order_counts["setup_reused_blocked"] += 1
+            else:
+                order = _new_order(sig_here, placed_bar=j)
+                order_counts["placed"] += 1
+                placed_setups.append(order)
+                state_kind = "PENDING"
 
         if state_kind == "POSITION":
             unrealized = _leg_pnl(position, position["qty_remaining"], bar["close"])
@@ -483,5 +518,6 @@ def _build_result(candles_15m, trades, equity_curve_raw, order_counts, config: S
             "ignored_in_position": order_counts["ignored_in_position"],
             "duplicate_signals": order_counts["duplicate_signals"],
             "margin_capped_trades": margin_capped_trades,
+            "setup_reused_blocked": order_counts["setup_reused_blocked"],
         },
     }
