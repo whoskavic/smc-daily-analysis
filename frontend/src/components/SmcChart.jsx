@@ -38,6 +38,8 @@ export default function SmcChart({ symbol }) {
     if (!containerRef.current) return;
 
     const chart = createChart(containerRef.current, {
+      width: containerRef.current.clientWidth,
+      height: containerRef.current.clientHeight,
       layout: {
         background: { type: ColorType.Solid, color: "#0d1117" },
         textColor: "#c9d1d9",
@@ -49,7 +51,6 @@ export default function SmcChart({ symbol }) {
       rightPriceScale: { borderColor: "#21262d" },
       timeScale: { borderColor: "#21262d", timeVisible: true },
       crosshair: { mode: 0 },
-      autoSize: true,
     });
 
     const series = chart.addCandlestickSeries({
@@ -63,7 +64,18 @@ export default function SmcChart({ symbol }) {
     chartRef.current = chart;
     seriesRef.current = series;
 
+    const resizeObserver = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (!entry) return;
+      const { width, height } = entry.contentRect;
+      if (width > 0 && height > 0) {
+        chart.resize(width, height);
+      }
+    });
+    resizeObserver.observe(containerRef.current);
+
     return () => {
+      resizeObserver.disconnect();
       chart.remove();
       chartRef.current = null;
       seriesRef.current = null;
