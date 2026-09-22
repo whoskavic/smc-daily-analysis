@@ -27,7 +27,10 @@ _BARS_PER_YEAR = 365 * 96
 @dataclass(frozen=True)
 class SimConfig:
     init_cash: float = 1000.0
-    fees_pct: float = 0.0004          # per side, applied to every fill
+    # MEXC futures base tier: 0% maker / 0.02% taker. Limit entries fill maker;
+    # SL/TP1/TP2/EOD exits are market-type and fill taker.
+    maker_fee_pct: float = 0.0
+    taker_fee_pct: float = 0.0002
     slippage_pct: float = 0.0005      # applied to market-type fills only (stop/TP market, EOD close)
     order_ttl_bars: int = 16          # safety net: unfilled limit cancelled after N 15m bars (4h)
     cancel_on_tp1_before_fill: bool = True
@@ -55,8 +58,8 @@ class SimConfig:
             raise ValueError("tp1_fraction must be in (0, 1]")
         if self.order_ttl_bars <= 0:
             raise ValueError("order_ttl_bars must be positive")
-        if self.fees_pct < 0 or self.slippage_pct < 0:
-            raise ValueError("fees_pct/slippage_pct must be >= 0")
+        if self.maker_fee_pct < 0 or self.taker_fee_pct < 0 or self.slippage_pct < 0:
+            raise ValueError("maker_fee_pct/taker_fee_pct/slippage_pct must be >= 0")
         if self.sizing_mode == "risk_pct" and self.risk_pct <= 0:
             raise ValueError("risk_pct must be positive for sizing_mode='risk_pct'")
         if self.sizing_mode == "fixed_risk_usdt" and self.fixed_risk_usdt <= 0:
@@ -159,10 +162,29 @@ def _is_duplicate_signal(order: Dict, sig: Dict) -> bool:
     return _same_setup(order, sig)
 
 
-def _matches_any_setup(sig: Dict, placed_setups: List[Dict]) -> bool:
+def _setup_key(sig: Dict) -> tuple:
+    """Hashable setup identity. Rounding to 8 decimal places is actually
+    STRICTER than the math.isclose(rel_tol=1e-9) comparison _same_setup uses
+    at BTC-level prices (~$60k): isclose's relative tolerance there is an
+    absolute ~6e-5, while 8dp rounding only tolerates ~5e-9. That's fine
+    because rule_based_signal is a deterministic function of the same
+    smc_levels/current_price — a re-fired identical setup produces
+    bit-identical floats, not merely close ones, so the tighter equality
+    never misses a real match. A set lookup replaces an O(n) scan over every
+    setup ever placed."""
+    return (
+        sig["direction"],
+        round(sig["entry_price"], 8),
+        round(sig["stop_loss"], 8),
+        round(sig["tp1"], 8),
+        round(sig["tp2"], 8),
+    )
+
+
+def _matches_any_setup(sig: Dict, placed_setup_keys: set) -> bool:
     """True if `sig` is the same setup as any setup ever placed (filled,
     cancelled, or still pending/open) — used to block re-placing it."""
-    return any(_same_setup(setup, sig) for setup in placed_setups)
+    return _setup_key(sig) in placed_setup_keys
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -230,9 +252,9 @@ def simulate(
         "duplicate_signals": 0,
         "setup_reused_blocked": 0,
     }
-    # Every setup ever placed (filled-and-closed or cancelled for any
+    # Keys of every setup ever placed (filled-and-closed or cancelled for any
     # reason) — a later identical signal is blocked unless allow_setup_reentry.
-    placed_setups: List[Dict] = []
+    placed_setup_keys: set = set()
 
     def _new_order(sig: Dict, placed_bar: int) -> Dict:
         return {
@@ -251,7 +273,7 @@ def simulate(
         # calculate_position_size), not the actual fill price — a gap fill
         # must not silently change position size. PnL still uses fill_price.
         margin, qty, margin_capped = _size_position(equity, ord_["entry_price"], ord_["stop_loss"], config)
-        entry_fee = config.fees_pct * qty * fill_price
+        entry_fee = config.maker_fee_pct * qty * fill_price  # limit entry fills maker
         return {
             "signal_time": ord_["signal_time"],
             "entry_time": bar["timestamp"],
@@ -269,6 +291,7 @@ def simulate(
             "tp1_hit": False,
             "realized_pnl": -entry_fee,   # entry fee charged immediately
             "fees_total": entry_fee,
+            "slippage_cost": 0.0,          # no slippage on the (limit) entry
             "exit_legs": [],  # list of (qty, price, time)
         }
 
@@ -279,10 +302,12 @@ def simulate(
 
     def _apply_exit_leg(pos: Dict, qty_leg: float, raw_price: float, bar: Dict) -> None:
         exit_price = _closing_fill_price(raw_price, pos["direction"], config.slippage_pct)
-        fee = config.fees_pct * qty_leg * exit_price
+        fee = config.taker_fee_pct * qty_leg * exit_price  # SL/TP1/TP2/EOD are market-type, taker
+        slip_cost = qty_leg * abs(exit_price - raw_price)
         gross = _leg_pnl(pos, qty_leg, exit_price)
         pos["realized_pnl"] += gross - fee
         pos["fees_total"] += fee
+        pos["slippage_cost"] += slip_cost
         pos["qty_remaining"] -= qty_leg
         pos["exit_legs"].append((qty_leg, exit_price, bar["timestamp"]))
 
@@ -314,6 +339,7 @@ def simulate(
             "margin": round(pos["margin"], 4),
             "qty": round(pos["qty_total"], 6),
             "fees": round(pos["fees_total"], 4),
+            "slippage_cost": round(pos["slippage_cost"], 4),
             "margin_capped": pos["margin_capped"],
         }
 
@@ -346,7 +372,7 @@ def simulate(
                 is_reuse_blocked = (
                     not config.allow_setup_reentry
                     and sig_here is not None and not is_dup
-                    and _matches_any_setup(sig_here, placed_setups)
+                    and _matches_any_setup(sig_here, placed_setup_keys)
                 )
                 if is_reuse_blocked:
                     order_counts["setup_reused_blocked"] += 1
@@ -360,7 +386,7 @@ def simulate(
                     order_counts["cancelled"]["replaced"] += 1
                     order = _new_order(sig_here, placed_bar=j)
                     order_counts["placed"] += 1
-                    placed_setups.append(order)
+                    placed_setup_keys.add(_setup_key(order))
                     consumed_signal = True
                 elif config.cancel_on_bias_flip and _is_opposite_bias(bias_by_bar.get(j), order["direction"]):
                     order_counts["cancelled"]["bias_flip"] += 1
@@ -418,12 +444,12 @@ def simulate(
                         position = None
 
         if state_kind is None and sig_here is not None and not consumed_signal:
-            if not config.allow_setup_reentry and _matches_any_setup(sig_here, placed_setups):
+            if not config.allow_setup_reentry and _matches_any_setup(sig_here, placed_setup_keys):
                 order_counts["setup_reused_blocked"] += 1
             else:
                 order = _new_order(sig_here, placed_bar=j)
                 order_counts["placed"] += 1
-                placed_setups.append(order)
+                placed_setup_keys.add(_setup_key(order))
                 state_kind = "PENDING"
 
         if state_kind == "POSITION":

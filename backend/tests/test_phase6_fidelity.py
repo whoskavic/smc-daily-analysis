@@ -555,15 +555,17 @@ class TestRMultipleAndFees(unittest.TestCase):
         r = trade_simulator.simulate(candles, signals, bias, SimConfig())
         trade = r["trades"][0]
         # Hand-computed: equity=1000, risk_pct=1% => risk_usdt=10, sl_dist_pct=0.05,
-        # leverage=10 => margin=20, qty=2.0. entry_fee=0.0004*2*100=0.08.
-        # tp1 leg (1.0 @ 105*(1-0.0005)=104.9475): fee=0.041979, net=4.905521.
-        # tp2 leg (1.0 @ 110*(1-0.0005)=109.945): fee=0.043978, net=9.901022.
-        # pnl = -0.08+4.905521+9.901022 = 14.726543; risk_usdt(actual)=2*5=10.
+        # leverage=10 => margin=20, qty=2.0. entry_fee=maker_fee_pct(0)*2*100=0.
+        # tp1 leg (1.0 @ 105*(1-0.0005)=104.9475): fee=taker_fee_pct(0.0002)*104.9475=0.0209895,
+        #   net=4.9475-0.0209895=4.9265105.
+        # tp2 leg (1.0 @ 110*(1-0.0005)=109.945): fee=0.0002*109.945=0.021989,
+        #   net=9.945-0.021989=9.923011.
+        # pnl = -0+4.9265105+9.923011 = 14.8495215; risk_usdt(actual)=2*5=10.
         self.assertAlmostEqual(trade["margin"], 20.0, places=2)
         self.assertAlmostEqual(trade["qty"], 2.0, places=4)
-        self.assertAlmostEqual(trade["fees"], 0.165957, places=3)
-        self.assertAlmostEqual(trade["pnl"], 14.7265, places=2)
-        self.assertAlmostEqual(trade["r_multiple"], 1.4727, places=2)
+        self.assertAlmostEqual(trade["fees"], 0.0430, places=3)
+        self.assertAlmostEqual(trade["pnl"], 14.8495, places=2)
+        self.assertAlmostEqual(trade["r_multiple"], 1.4850, places=2)
 
 
 class TestShortDirection(unittest.TestCase):
@@ -735,7 +737,7 @@ class TestEngineSimModeDispatch(unittest.TestCase):
         def fake_has_structural_setup(smc_levels):
             return True
 
-        def fake_rule_based_signal(smc_levels, current_price):
+        def fake_rule_based_signal(smc_levels, current_price, **kwargs):
             return {
                 "decision": "TRADE", "direction": "LONG", "entry_price": 100.0,
                 "stop_loss": 95.0, "tp1": 105.0, "tp2": 110.0,
@@ -793,6 +795,9 @@ _EMPTY_ENGINE_RESULT_TEMPLATE = {
     "expectancy_r": 0.0, "avg_win_r": 0.0, "avg_loss_r": 0.0,
     "trades": [], "equity_curve": [], "claude_sample": [], "orders": None,
     "sim_config": None, "note": None,
+    "decision_schedule": "every_bar", "decision_bars": 0,
+    "signal_config": {"min_sl_pct": None, "min_sl_atr": None, "atr_period": 14},
+    "sl_pct_stats": None, "cost_r_stats": None, "fill_bar_sl_exits": 0, "r_by_sl_bucket": {},
 }
 
 
