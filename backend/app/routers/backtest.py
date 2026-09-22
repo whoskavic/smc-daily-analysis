@@ -12,12 +12,14 @@ from pydantic import BaseModel, Field
 
 from app.models.database import SessionLocal, BacktestRun
 from app.services.backtest.engine import run_backtest, DEFAULT_FEES_PCT, DEFAULT_SLIPPAGE_PCT
+from app.services.backtest.signal_simulator import SignalConfig
 from app.services.backtest.trade_simulator import SimConfig
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/backtest", tags=["backtest"])
 
 _DEFAULT_SIM = SimConfig()
+_DEFAULT_SIGNAL = SignalConfig()
 
 
 class BacktestRequest(BaseModel):
@@ -25,13 +27,16 @@ class BacktestRequest(BaseModel):
     since: datetime                              # UTC, e.g. "2025-08-01T00:00:00Z"
     until: Optional[datetime] = None              # defaults to now
     init_cash: float = 1000.0
-    fees_pct: float = DEFAULT_FEES_PCT
+    fees_pct: float = DEFAULT_FEES_PCT            # sim_mode="vbt_legacy" only
     slippage_pct: float = DEFAULT_SLIPPAGE_PCT
     claude_sample_pct: float = Field(0.0, ge=0.0, le=1.0)
+    claude_sample_max: int = Field(0, ge=0)
     save: bool = True
 
     # ── Phase 6: event-driven simulation options (all optional) ─────────────
     sim_mode: Literal["event", "vbt_legacy"] = "event"
+    maker_fee_pct: float = Field(_DEFAULT_SIM.maker_fee_pct, ge=0)
+    taker_fee_pct: float = Field(_DEFAULT_SIM.taker_fee_pct, ge=0)
     order_ttl_bars: int = Field(_DEFAULT_SIM.order_ttl_bars, gt=0)
     sizing_mode: Literal["risk_pct", "fixed_risk_usdt", "fixed_margin_usdt"] = _DEFAULT_SIM.sizing_mode
     # risk_pct/leverage default to None so the live-mirroring settings
@@ -40,6 +45,11 @@ class BacktestRequest(BaseModel):
     fixed_risk_usdt: float = Field(_DEFAULT_SIM.fixed_risk_usdt, gt=0)
     fixed_margin_usdt: float = Field(_DEFAULT_SIM.fixed_margin_usdt, gt=0)
     leverage: Optional[int] = Field(None, gt=0)
+
+    # ── Phase 6: rule-based proxy risk floor + decision cadence (optional) ──
+    min_sl_pct: Optional[float] = Field(_DEFAULT_SIGNAL.min_sl_pct, gt=0)
+    min_sl_atr: Optional[float] = Field(_DEFAULT_SIGNAL.min_sl_atr, gt=0)
+    decision_schedule: Literal["every_bar", "daily"] = "every_bar"
 
 
 @router.post("/run")
@@ -57,7 +67,8 @@ async def run_backtest_endpoint(req: BacktestRequest):
         leverage = req.leverage if req.leverage is not None else getattr(settings, "max_leverage", 10)
         sim_config = SimConfig(
             init_cash=req.init_cash,
-            fees_pct=req.fees_pct,
+            maker_fee_pct=req.maker_fee_pct,
+            taker_fee_pct=req.taker_fee_pct,
             slippage_pct=req.slippage_pct,
             order_ttl_bars=req.order_ttl_bars,
             sizing_mode=req.sizing_mode,
@@ -66,6 +77,8 @@ async def run_backtest_endpoint(req: BacktestRequest):
             fixed_margin_usdt=req.fixed_margin_usdt,
             leverage=leverage,
         )
+
+    signal_config = SignalConfig(min_sl_pct=req.min_sl_pct, min_sl_atr=req.min_sl_atr)
 
     try:
         result = run_backtest(
@@ -76,8 +89,11 @@ async def run_backtest_endpoint(req: BacktestRequest):
             fees_pct=req.fees_pct,
             slippage_pct=req.slippage_pct,
             claude_sample_pct=req.claude_sample_pct,
+            claude_sample_max=req.claude_sample_max,
             sim_mode=req.sim_mode,
             sim_config=sim_config,
+            signal_config=signal_config,
+            decision_schedule=req.decision_schedule,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

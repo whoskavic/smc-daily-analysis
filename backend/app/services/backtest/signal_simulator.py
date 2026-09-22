@@ -15,6 +15,7 @@ model output. Off by default (claude_sample_pct=0) — see engine.run_backtest()
 from __future__ import annotations
 
 import random
+from dataclasses import dataclass
 from typing import Dict, List, Optional
 
 MIN_CONFIDENCE = 85
@@ -22,6 +23,38 @@ MIN_RR = 3.0
 SL_BUFFER_PCT = 0.15  # extra room beyond the OB/FVG edge, as a fraction of zone size
 
 _BIAS_TF_PRIORITY = ("structure_1D", "structure_4H", "structure_1H", "structure_15m")
+
+
+@dataclass(frozen=True)
+class SignalConfig:
+    """Minimum risk-distance floor — the proxy's SL buffer alone
+    (`SL_BUFFER_PCT * zone_size`) can round to a near-zero risk distance on a
+    tight zone, which fees/slippage then dwarf. Setups below the threshold
+    are skipped outright, never widened."""
+    min_sl_pct: Optional[float] = None    # e.g. 0.3 -> skip setups whose |entry-SL|/entry < 0.3%
+    min_sl_atr: Optional[float] = None    # e.g. 1.0 -> skip if |entry-SL| < 1.0 * ATR(14) of the 15m window
+    atr_period: int = 14
+
+
+def _true_range(candle: Dict, prev_close: float) -> float:
+    return max(
+        candle["high"] - candle["low"],
+        abs(candle["high"] - prev_close),
+        abs(candle["low"] - prev_close),
+    )
+
+
+def _compute_atr(candles_15m: List[Dict], period: int) -> float:
+    """Simple mean of true range over the last `period` bars — needs
+    `period + 1` candles (each TR needs the prior bar's close)."""
+    if len(candles_15m) < period + 1:
+        raise ValueError(
+            f"min_sl_atr needs at least {period + 1} 15m candles for ATR({period}), "
+            f"got {len(candles_15m)}"
+        )
+    window = candles_15m[-(period + 1):]
+    true_ranges = [_true_range(window[i], window[i - 1]["close"]) for i in range(1, len(window))]
+    return sum(true_ranges) / len(true_ranges)
 
 
 def primary_bias(confluence: Dict) -> str:
@@ -83,11 +116,20 @@ def _no_trade(score: int, reason: str) -> Dict:
     }
 
 
-def rule_based_signal(smc_levels: Dict, current_price: float) -> Dict:
+def rule_based_signal(
+    smc_levels: Dict,
+    current_price: float,
+    config: SignalConfig = SignalConfig(),
+    candles_15m: Optional[List[Dict]] = None,
+) -> Dict:
     """
     Deterministic analog of claude_service's execution decision: same
     85-confidence / 1:3-RR gates, driven by score_confluence() + nearest
     structural zone instead of an LLM call.
+
+    config: minimum risk-distance floor(s) — see SignalConfig. Defaults leave
+        behavior unchanged (no floor).
+    candles_15m: required only if config.min_sl_atr is set.
     """
     key_levels = smc_levels.get("key_levels", [])
     confluence = smc_levels.get("confluence", {})
@@ -122,6 +164,25 @@ def rule_based_signal(smc_levels: Dict, current_price: float) -> Dict:
 
     if risk <= 0:
         return _no_trade(score, "Invalid risk distance derived from zone")
+
+    atr = None
+    if config.min_sl_atr is not None:
+        if not candles_15m:
+            raise ValueError("min_sl_atr requires non-empty candles_15m")
+        atr = _compute_atr(candles_15m, config.atr_period)
+
+    risk_pct = (risk / entry * 100.0) if entry > 0 else 0.0
+    if config.min_sl_pct is not None and risk_pct < config.min_sl_pct:
+        return _no_trade(
+            score,
+            f"Risk distance below minimum: {risk_pct:.4f}% < min_sl_pct={config.min_sl_pct}%",
+        )
+    if atr is not None and risk < config.min_sl_atr * atr:
+        return _no_trade(
+            score,
+            f"Risk distance below minimum: {risk:.6f} < "
+            f"min_sl_atr={config.min_sl_atr}*ATR({config.atr_period})={config.min_sl_atr * atr:.6f}",
+        )
 
     liquidity_tp = _liquidity_target(key_levels, entry, direction)
     tp2 = liquidity_tp if liquidity_tp is not None else tp1
