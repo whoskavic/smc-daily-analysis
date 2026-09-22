@@ -130,7 +130,10 @@ def create_exchange(
         api_key: Override credentials (optional — falls back to config/env)
         secret: Override credentials (optional)
         passphrase: Required for OKX (optional for others)
-        sandbox: Use testnet/sandbox environment if available
+        sandbox: Use testnet/sandbox environment if available. Supported by
+            Binance, Bybit, and OKX via ccxt's set_sandbox_mode(). MEXC has
+            no sandbox in ccxt — raises ValueError instead of silently
+            falling back to the live/mainnet API.
 
     Returns:
         ExchangeClient — contains .exchange (ccxt) and .meta (ExchangeMeta)
@@ -169,11 +172,27 @@ def create_exchange(
     if exchange_id == "okx":
         init_params["options"]["broker"] = ""  # no broker ID required
 
-    if sandbox:
-        init_params["sandbox"] = True  # ccxt testnet flag (supported by Binance, Bybit)
-
     exchange = meta.ccxt_class(init_params)
     logger.info(f"[ExchangeFactory] Created {exchange_id} client (sandbox={sandbox})")
+
+    if sandbox:
+        # ccxt's init-param "sandbox" flag is ignored by the constructor —
+        # sandbox/testnet mode must be switched on via set_sandbox_mode()
+        # after the instance is built, or the client silently stays on
+        # mainnet. No HTTP session is opened until the first request, so
+        # there's nothing to close if this raises below.
+        if not exchange.urls.get("test"):
+            raise ValueError(
+                f"{exchange_id} does not support sandbox/testnet in ccxt — "
+                "use TRADE_MODE=paper for testing"
+            )
+        try:
+            exchange.set_sandbox_mode(True)
+        except ccxt.NotSupported:
+            raise ValueError(
+                f"{exchange_id} does not support sandbox/testnet in ccxt — "
+                "use TRADE_MODE=paper for testing"
+            )
 
     return ExchangeClient(exchange_id=exchange_id, exchange=exchange, meta=meta)
 
