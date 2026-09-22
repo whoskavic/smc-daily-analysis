@@ -48,8 +48,10 @@ def _parse_args(argv=None) -> argparse.Namespace:
     p.add_argument("--since", required=True, type=_parse_date, help="e.g. 2024-09-01")
     p.add_argument("--until", type=_parse_date, default=None, help="e.g. 2026-09-01 (default: now)")
     p.add_argument("--init-cash", type=float, default=1000.0)
-    p.add_argument("--fees-pct", type=float, default=0.0004, help='sim_mode="vbt_legacy" only')
-    p.add_argument("--slippage-pct", type=float, default=0.0005)
+    p.add_argument("--fees-pct", type=float, default=0.0004,
+                    help='sim_mode="vbt_legacy" only. Fraction per side, 0.0002 = 0.02%%')
+    p.add_argument("--slippage-pct", type=float, default=0.0005,
+                    help="Fraction per side, 0.0002 = 0.02%%")
     p.add_argument("--claude-sample-pct", type=float, default=0.0,
                     help="Random fraction of decision bars to cross-check against Claude. "
                          "Mutually exclusive with --claude-sample-max.")
@@ -57,8 +59,10 @@ def _parse_args(argv=None) -> argparse.Namespace:
                     help="Sample up to N decision bars, evenly spaced and deterministic "
                          "(includes NO_TRADE bars). Mutually exclusive with --claude-sample-pct.")
     p.add_argument("--sim-mode", choices=["event", "vbt_legacy"], default="event")
-    p.add_argument("--maker-fee-pct", type=float, default=SimConfig.maker_fee_pct)
-    p.add_argument("--taker-fee-pct", type=float, default=SimConfig.taker_fee_pct)
+    p.add_argument("--maker-fee-pct", type=float, default=SimConfig.maker_fee_pct,
+                    help="Fraction per side, 0.0002 = 0.02%%")
+    p.add_argument("--taker-fee-pct", type=float, default=SimConfig.taker_fee_pct,
+                    help="Fraction per side, 0.0002 = 0.02%%")
     p.add_argument("--order-ttl-bars", type=int, default=SimConfig.order_ttl_bars)
     p.add_argument("--sizing-mode", choices=["risk_pct", "fixed_risk_usdt", "fixed_margin_usdt"],
                     default=SimConfig.sizing_mode)
@@ -69,7 +73,7 @@ def _parse_args(argv=None) -> argparse.Namespace:
     p.add_argument("--leverage", type=int, default=None,
                     help="Default: settings.max_leverage (live-mirroring)")
     p.add_argument("--min-sl-pct", type=float, default=None,
-                    help="Skip setups whose risk distance is below this %% of entry price")
+                    help="Percent, 0.3 = 0.3%%. Skip setups whose risk distance is below this %% of entry price")
     p.add_argument("--min-sl-atr", type=float, default=None,
                     help="Skip setups whose risk distance is below this multiple of ATR(14)")
     p.add_argument("--decision-schedule", choices=["every_bar", "daily"], default="every_bar",
@@ -107,6 +111,11 @@ def _fmt(value, digits=2) -> str:
     return str(value)
 
 
+# Fraction-per-side fields (0.0002 = 0.02%) worth also showing as a percent
+# so a reader doesn't have to do the *100 in their head.
+_PCT_FRACTION_KEYS = {"maker_fee_pct", "taker_fee_pct", "slippage_pct"}
+
+
 def _render_summary_md(result: dict, args: argparse.Namespace) -> str:
     lines = [f"# Backtest — {result['symbol']} ({result['since']} → {result['until']})", ""]
 
@@ -114,7 +123,10 @@ def _render_summary_md(result: dict, args: argparse.Namespace) -> str:
     lines += [f"- sim_mode: `{result.get('sim_mode')}`"]
     if result.get("sim_config"):
         for k, v in result["sim_config"].items():
-            lines.append(f"- {k}: `{v}`")
+            if k in _PCT_FRACTION_KEYS and isinstance(v, (int, float)):
+                lines.append(f"- {k}: `{v}` ({v * 100:.3f}%)")
+            else:
+                lines.append(f"- {k}: `{v}`")
     lines.append(f"- decision_schedule: `{result.get('decision_schedule')}`")
     lines.append(f"- decision_bars: `{result.get('decision_bars', 0)}`")
     if result.get("signal_config"):
@@ -195,48 +207,58 @@ def _render_diagnostics_md(result: dict) -> list:
     return lines
 
 
+def _render_sl_pct_stats_table(label: str, stats: dict) -> list:
+    lines = [f"**{label}** (TRADE-decision samples only, % of entry price)", "",
+              "| min | p25 | median | p75 | max |", "|---|---|---|---|---|"]
+    lines.append(
+        f"| {_fmt(stats['min'], 4)} | {_fmt(stats['p25'], 4)} | {_fmt(stats['median'], 4)} | "
+        f"{_fmt(stats['p75'], 4)} | {_fmt(stats['max'], 4)} |"
+    )
+    lines.append("")
+    return lines
+
+
 def _render_claude_vs_proxy_md(result: dict) -> list:
-    samples = [s for s in result.get("claude_sample", []) if "error" not in s]
-    if not samples:
+    all_samples = result.get("claude_sample", [])
+    cvp = result.get("claude_vs_proxy")
+    if not cvp:
         return []
 
-    both_trade = [s for s in samples if s.get("rule_decision") == "TRADE" and s.get("claude_decision") == "TRADE"]
-    decision_agree = sum(1 for s in samples if s.get("agree_decision")) / len(samples) * 100.0
-    direction_agree = (
-        sum(1 for s in both_trade if s.get("agree_direction")) / len(both_trade) * 100.0 if both_trade else None
-    )
-    claude_trade_count = sum(1 for s in samples if s.get("claude_decision") == "TRADE")
-
-    rule_sl_pcts = [s["rule_sl_pct"] for s in samples if s.get("rule_sl_pct") is not None]
-    claude_sl_pcts = [s["claude_sl_pct"] for s in samples if s.get("claude_sl_pct") is not None]
-
-    def _mean(vals):
-        return sum(vals) / len(vals) if vals else None
+    error_count = sum(1 for s in all_samples if "error" in s)
+    both_trade_n = cvp["both_trade_n"]
 
     lines = ["## Claude vs proxy", ""]
-    lines.append(f"- samples: `{len(result.get('claude_sample', []))}` (`{len(samples)}` without error)")
-    lines.append(f"- decision agreement: `{_fmt(decision_agree)}%`")
+    lines.append(f"- samples: `{len(all_samples)}` (`{error_count}` failed/excluded)")
+    lines.append(f"- decision agreement: `{_fmt(cvp['decision_agreement_pct'])}%`")
+    direction_pct = cvp["direction_agreement_pct"]
     lines.append(
-        f"- direction agreement (both TRADE, n={len(both_trade)}): "
-        f"`{_fmt(direction_agree) if direction_agree is not None else 'n/a'}%`"
+        f"- direction agreement (both TRADE, n={both_trade_n}): "
+        f"`{_fmt(direction_pct) if direction_pct is not None else 'n/a'}%`"
     )
-    lines.append(f"- Claude TRADE count: `{claude_trade_count}`")
-    lines.append(f"- rule sl_pct mean (n={len(rule_sl_pcts)}): `{_fmt(_mean(rule_sl_pcts), 4)}%`")
-    lines.append(f"- Claude sl_pct mean (n={len(claude_sl_pcts)}): `{_fmt(_mean(claude_sl_pcts), 4)}%`")
+    lines.append(f"- Claude TRADE count: `{cvp['claude_trade_n']}`")
     lines.append("")
+
+    if cvp["rule_sl_pct_stats"]:
+        lines += _render_sl_pct_stats_table("rule sl_pct_stats", cvp["rule_sl_pct_stats"])
+    if cvp["claude_sl_pct_stats"]:
+        lines += _render_sl_pct_stats_table("Claude sl_pct_stats", cvp["claude_sl_pct_stats"])
 
     lines += [
         "| timestamp | rule | claude | agree | rule_sl% | claude_sl% |",
         "|---|---|---|---|---|---|",
     ]
-    for s in result.get("claude_sample", []):
+    for s in all_samples:
         if "error" in s:
             lines.append(f"| {s.get('timestamp')} | error: {s['error']} | | | | |")
             continue
+        agree_direction = s.get("agree_direction")
+        agree_col = "yes" if s.get("agree_decision") else "no"
+        if agree_direction is not None:
+            agree_col += f" / dir {'yes' if agree_direction else 'no'}"
         lines.append(
             f"| {s.get('timestamp')} | {s.get('rule_decision')}/{s.get('rule_direction') or '-'} | "
             f"{s.get('claude_decision')}/{s.get('claude_direction') or '-'} | "
-            f"{'yes' if s.get('agree_decision') else 'no'} | "
+            f"{agree_col} | "
             f"{_fmt(s.get('rule_sl_pct'), 4) if s.get('rule_sl_pct') is not None else 'n/a'} | "
             f"{_fmt(s.get('claude_sl_pct'), 4) if s.get('claude_sl_pct') is not None else 'n/a'} |"
         )

@@ -503,6 +503,234 @@ class TestClaudeSampling(unittest.TestCase):
             [{k: v for k, v in t.items()} for t in result_sampled["trades"]],
         )
 
+    def _fake_fallback_execution(self, reason="Analysis unavailable after 2 attempt(s): Anthropic API error: 401"):
+        # claude_service.run_analysis() never raises -- on API/parse failure
+        # it returns a structurally valid NO_TRADE fallback instead
+        # (claude_service._no_trade_fallback / run_analysis's final
+        # except-all block). This is what that looks like.
+        return {"execution": {
+            "decision": "NO_TRADE", "direction": None, "entry_price": None,
+            "stop_loss": None, "tp1": None, "tp2": None, "confidence": 0,
+            "rr_ratio": None, "no_trade_reason": reason,
+        }}
+
+    def test_claude_fallback_return_recorded_as_error_and_excluded_from_stats(self):
+        n = 250
+        candles = _flat(n)
+        candles[125] = C(_ts(125), 102, 103, 99.5, 100.5)  # gives the proxy something to fill
+
+        def fake_rule_based_signal(smc_levels, current_price, **kwargs):
+            return {"decision": "TRADE", "direction": "LONG", "entry_price": 100.0,
+                    "stop_loss": 95.0, "tp1": 105.0, "tp2": 110.0,
+                    "confidence": 90, "rr_ratio": 3.0, "no_trade_reason": None}
+
+        call_idx = [0]
+
+        def fake_run_analysis(snapshot):
+            call_idx[0] += 1
+            if call_idx[0] == 1:
+                return self._fake_fallback_execution()
+            return self._fake_claude_execution("TRADE")
+
+        with patch.object(_settings, "anthropic_api_key", _REAL_ANTHROPIC_KEY), \
+             patch.object(engine.data_loader, "fetch_historical_ohlcv", return_value=candles), \
+             patch.object(engine.smc_replay, "replay", side_effect=self._fake_replay(candles)), \
+             patch.object(engine.smc_engine, "has_structural_setup", return_value=True), \
+             patch.object(engine.signal_simulator, "rule_based_signal", side_effect=fake_rule_based_signal), \
+             patch("app.services.claude_service.run_analysis", side_effect=fake_run_analysis):
+            result = engine.run_backtest(
+                "BTC/USDT",
+                since=datetime(2026, 1, 1, tzinfo=timezone.utc),
+                until=datetime(2026, 1, 2, tzinfo=timezone.utc),
+                claude_sample_max=2,
+            )
+
+        self.assertEqual(len(result["claude_sample"]), 2)
+        fallback_sample = result["claude_sample"][0]
+        self.assertIn("error", fallback_sample)
+        self.assertTrue(fallback_sample["error"].startswith("Analysis unavailable after"))
+        for key in ("claude_decision", "claude_direction", "claude_entry", "claude_sl",
+                    "agree_decision", "agree_direction"):
+            self.assertNotIn(key, fallback_sample)
+
+        # excluded from claude_vs_proxy -- only the 2nd (successful) sample counts
+        cvp = result["claude_vs_proxy"]
+        self.assertIsNotNone(cvp)
+        self.assertEqual(cvp["claude_trade_n"], 1)
+
+    def test_three_consecutive_fallback_failures_raises(self):
+        n = 250
+        candles = _flat(n)
+
+        def fake_rule_based_signal(smc_levels, current_price, **kwargs):
+            return {"decision": "TRADE", "direction": "LONG", "entry_price": 100.0,
+                    "stop_loss": 95.0, "tp1": 105.0, "tp2": 110.0,
+                    "confidence": 90, "rr_ratio": 3.0, "no_trade_reason": None}
+
+        def fake_run_analysis(snapshot):
+            return self._fake_fallback_execution("Analysis unavailable after 2 attempt(s): "
+                                                   "Anthropic API error: 401 Unauthorized")
+
+        with patch.object(_settings, "anthropic_api_key", _REAL_ANTHROPIC_KEY), \
+             patch.object(engine.data_loader, "fetch_historical_ohlcv", return_value=candles), \
+             patch.object(engine.smc_replay, "replay", side_effect=self._fake_replay(candles)), \
+             patch.object(engine.smc_engine, "has_structural_setup", return_value=True), \
+             patch.object(engine.signal_simulator, "rule_based_signal", side_effect=fake_rule_based_signal), \
+             patch("app.services.claude_service.run_analysis", side_effect=fake_run_analysis):
+            with self.assertRaises(ValueError) as ctx:
+                engine.run_backtest(
+                    "BTC/USDT",
+                    since=datetime(2026, 1, 1, tzinfo=timezone.utc),
+                    until=datetime(2026, 1, 2, tzinfo=timezone.utc),
+                    claude_sample_max=5,
+                )
+        self.assertIn("bad ANTHROPIC_API_KEY", str(ctx.exception))
+
+    def test_agree_direction_none_unless_both_trade(self):
+        n = 250
+        candles = _flat(n)
+        candles[125] = C(_ts(125), 102, 103, 99.5, 100.5)
+
+        def fake_rule_based_signal(smc_levels, current_price, **kwargs):
+            return {"decision": "TRADE", "direction": "LONG", "entry_price": 100.0,
+                    "stop_loss": 95.0, "tp1": 105.0, "tp2": 110.0,
+                    "confidence": 90, "rr_ratio": 3.0, "no_trade_reason": None}
+
+        def fake_run_analysis(snapshot):
+            return self._fake_claude_execution("NO_TRADE")  # rule=TRADE, claude=NO_TRADE
+
+        with patch.object(_settings, "anthropic_api_key", _REAL_ANTHROPIC_KEY), \
+             patch.object(engine.data_loader, "fetch_historical_ohlcv", return_value=candles), \
+             patch.object(engine.smc_replay, "replay", side_effect=self._fake_replay(candles)), \
+             patch.object(engine.smc_engine, "has_structural_setup", return_value=True), \
+             patch.object(engine.signal_simulator, "rule_based_signal", side_effect=fake_rule_based_signal), \
+             patch("app.services.claude_service.run_analysis", side_effect=fake_run_analysis):
+            result = engine.run_backtest(
+                "BTC/USDT",
+                since=datetime(2026, 1, 1, tzinfo=timezone.utc),
+                until=datetime(2026, 1, 2, tzinfo=timezone.utc),
+                claude_sample_max=1,
+            )
+
+        sample = result["claude_sample"][0]
+        self.assertEqual(sample["rule_decision"], "TRADE")
+        self.assertEqual(sample["claude_decision"], "NO_TRADE")
+        self.assertIsNone(sample["agree_direction"])
+        self.assertFalse(sample["agree_decision"])
+
+    def test_claude_vs_proxy_sl_pct_stats_populated_for_both_trade_samples(self):
+        n = 250
+        candles = _flat(n)
+        candles[125] = C(_ts(125), 102, 103, 99.5, 100.5)
+
+        def fake_rule_based_signal(smc_levels, current_price, **kwargs):
+            return {"decision": "TRADE", "direction": "LONG", "entry_price": 100.0,
+                    "stop_loss": 95.0, "tp1": 105.0, "tp2": 110.0,
+                    "confidence": 90, "rr_ratio": 3.0, "no_trade_reason": None}
+
+        def fake_run_analysis(snapshot):
+            return self._fake_claude_execution("TRADE")
+
+        with patch.object(_settings, "anthropic_api_key", _REAL_ANTHROPIC_KEY), \
+             patch.object(engine.data_loader, "fetch_historical_ohlcv", return_value=candles), \
+             patch.object(engine.smc_replay, "replay", side_effect=self._fake_replay(candles)), \
+             patch.object(engine.smc_engine, "has_structural_setup", return_value=True), \
+             patch.object(engine.signal_simulator, "rule_based_signal", side_effect=fake_rule_based_signal), \
+             patch("app.services.claude_service.run_analysis", side_effect=fake_run_analysis):
+            result = engine.run_backtest(
+                "BTC/USDT",
+                since=datetime(2026, 1, 1, tzinfo=timezone.utc),
+                until=datetime(2026, 1, 2, tzinfo=timezone.utc),
+                claude_sample_max=3,
+            )
+
+        cvp = result["claude_vs_proxy"]
+        self.assertEqual(cvp["both_trade_n"], 3)
+        self.assertEqual(cvp["claude_trade_n"], 3)
+        self.assertEqual(cvp["decision_agreement_pct"], 100.0)
+        self.assertEqual(cvp["direction_agreement_pct"], 100.0)
+        self.assertIsNotNone(cvp["rule_sl_pct_stats"])
+        self.assertIsNotNone(cvp["claude_sl_pct_stats"])
+        for key in ("min", "p25", "median", "p75", "max"):
+            self.assertIn(key, cvp["rule_sl_pct_stats"])
+            self.assertIn(key, cvp["claude_sl_pct_stats"])
+
+
+class TestHistoricalTicker(unittest.TestCase):
+    def test_derives_high_low_volume_change_pct_from_last_96_bars(self):
+        n = 100
+        candles = [C(_ts(i), 100, 101, 99, 100, v=10) for i in range(n)]
+        candles[50] = C(_ts(50), 100, 150, 99, 100, v=10)   # spike WITHIN the last-96 window (idx >= 4)
+        candles[2] = C(_ts(2), 100, 999, 0.5, 100, v=9999)  # OUTSIDE the last-96 window (idx < 4)
+
+        snap = {"close_price": 105.0, "candles_15m": candles}
+        ticker = engine._derive_historical_ticker("BTC/USDT", snap)
+        window = candles[-96:]
+
+        self.assertEqual(ticker["symbol"], "BTC/USDT")
+        self.assertEqual(ticker["last"], 105.0)
+        self.assertEqual(ticker["high"], max(c["high"] for c in window))
+        self.assertEqual(ticker["high"], 150)
+        self.assertNotEqual(ticker["high"], 999)  # bar 2 correctly excluded
+        self.assertEqual(ticker["low"], min(c["low"] for c in window))
+        self.assertEqual(ticker["volume"], sum(c["volume"] for c in window))
+        expected_change_pct = (105.0 - window[0]["open"]) / window[0]["open"] * 100.0
+        self.assertAlmostEqual(ticker["change_pct"], expected_change_pct, places=6)
+
+    def test_funding_rate_and_fear_greed_stay_none_end_to_end(self):
+        n = 250
+        candles = _flat(n)
+        candles[125] = C(_ts(125), 102, 103, 99.5, 100.5)
+
+        captured = []
+
+        def fake_run_analysis(snapshot):
+            captured.append(snapshot)
+            return {"execution": {
+                "decision": "TRADE", "direction": "LONG", "entry_price": 101.0,
+                "stop_loss": 96.0, "tp1": 106.0, "tp2": 111.0, "confidence": 88, "rr_ratio": 3.1,
+            }}
+
+        def fake_rule_based_signal(smc_levels, current_price, **kwargs):
+            return {"decision": "TRADE", "direction": "LONG", "entry_price": 100.0,
+                    "stop_loss": 95.0, "tp1": 105.0, "tp2": 110.0,
+                    "confidence": 90, "rr_ratio": 3.0, "no_trade_reason": None}
+
+        def fake_replay(*a, **k):
+            for i, bar in enumerate(candles):
+                yield {
+                    "bar_index": i, "timestamp": bar["timestamp"],
+                    "open_price": bar["open"], "high_price": bar["high"],
+                    "low_price": bar["low"], "close_price": bar["close"],
+                    "candles_1d": [], "candles_4h": [], "candles_1h": [],
+                    "candles_15m": candles[max(0, i - 95):i + 1],
+                    "smc_levels": {"key_levels": [], "confluence": {"score": 90, "factors": {"structure_1D": "bullish"}, "conflicts": []}},
+                    "kill_zone": "london",
+                }
+
+        with patch.object(_settings, "anthropic_api_key", _REAL_ANTHROPIC_KEY), \
+             patch.object(engine.data_loader, "fetch_historical_ohlcv", return_value=candles), \
+             patch.object(engine.smc_replay, "replay", side_effect=fake_replay), \
+             patch.object(engine.smc_engine, "has_structural_setup", return_value=True), \
+             patch.object(engine.signal_simulator, "rule_based_signal", side_effect=fake_rule_based_signal), \
+             patch("app.services.claude_service.run_analysis", side_effect=fake_run_analysis):
+            engine.run_backtest(
+                "BTC/USDT",
+                since=datetime(2026, 1, 1, tzinfo=timezone.utc),
+                until=datetime(2026, 1, 2, tzinfo=timezone.utc),
+                claude_sample_max=1,
+            )
+
+        self.assertEqual(len(captured), 1)
+        snap = captured[0]
+        self.assertIsNone(snap["funding_rate"])
+        self.assertIsNone(snap["fear_greed_index"])
+        ticker = snap["ticker"]
+        self.assertIsNotNone(ticker["high"])
+        self.assertIsNotNone(ticker["low"])
+        self.assertIsNotNone(ticker["volume"])
+        self.assertIsNotNone(ticker["change_pct"])
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Diagnostics — engine.py
@@ -567,7 +795,9 @@ class TestDiagnostics(unittest.TestCase):
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestSetupKeySet(unittest.TestCase):
-    def test_float_noise_within_1e9_still_matches(self):
+    def test_float_noise_within_1e10_still_matches_after_8dp_rounding(self):
+        # 1e-10 noise is well inside the ~5e-9 tolerance 8dp rounding gives at
+        # this price magnitude, so it must still hash to the same setup key.
         order = {"direction": "LONG", "entry_price": 100.0, "stop_loss": 95.0, "tp1": 105.0, "tp2": 110.0}
         noisy_sig = {
             "direction": "LONG",

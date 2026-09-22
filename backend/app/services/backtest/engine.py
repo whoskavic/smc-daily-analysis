@@ -144,6 +144,7 @@ def run_backtest(
     sampled: List[Dict] = []
     bias_by_bar: Dict[int, str] = {}
     decision_bar_counter = 0
+    consecutive_fallback_failures = 0
 
     for snap in smc_replay.replay(candles_15m, candles_1h, candles_4h, candles_1d):
         bias_by_bar[snap["bar_index"]] = signal_simulator.primary_bias(
@@ -173,7 +174,14 @@ def run_backtest(
             sample_this_bar = signal_simulator.should_sample(claude_sample_pct)
 
         if sample_this_bar:
-            sampled.append(_run_claude_sample(symbol, snap, sig))
+            record, is_fallback_failure = _run_claude_sample(symbol, snap, sig)
+            sampled.append(record)
+            consecutive_fallback_failures = consecutive_fallback_failures + 1 if is_fallback_failure else 0
+            if len(sampled) == 3 and consecutive_fallback_failures == 3:
+                raise ValueError(
+                    "First 3 Claude samples all failed with a silent fallback "
+                    f"(likely a bad ANTHROPIC_API_KEY or no credits): {record['error']}"
+                )
 
         decision_bar_counter += 1
 
@@ -214,6 +222,7 @@ def run_backtest(
         "decision_schedule": decision_schedule,
         "decision_bars": total_decision_bars,
         "signal_config": _signal_config_as_dict(signal_config),
+        "claude_vs_proxy": _compute_claude_vs_proxy(sampled),
     })
     return stats
 
@@ -286,14 +295,53 @@ def _sl_pct(entry: Optional[float], sl: Optional[float]) -> Optional[float]:
     return abs(entry - sl) / entry * 100.0
 
 
-def _run_claude_sample(symbol: str, snap: Dict, rule_sig: Dict) -> Dict:
+# claude_service.run_analysis() never raises — on API/parse failure it
+# returns a structurally valid NO_TRADE fallback whose no_trade_reason
+# starts with this (see claude_service._no_trade_fallback /
+# run_analysis's final except-all block). That's a failed sample, not a
+# real Claude opinion, and must be treated as one.
+_CLAUDE_FALLBACK_MARKER = "Analysis unavailable after"
+
+
+def _derive_historical_ticker(symbol: str, snap: Dict) -> Dict:
+    """
+    Reconstructs binance_service.fetch_ticker()'s 24h stats from the last 96
+    15m bars (24h) already carried in the snapshot, matching its field
+    definitions exactly: high/low are the 24h price extremes, volume is 24h
+    base-asset volume (summed candle volume, same unit as live's `volume`
+    field), change_pct is the 24h %% change as a percentage number — e.g.
+    2.35 means 2.35%%, not the fraction 0.0235 — matching Binance's
+    priceChangePercent.
+    """
+    window = snap["candles_15m"][-96:]
+    if not window:
+        return {"symbol": symbol, "last": snap["close_price"],
+                "high": None, "low": None, "volume": None, "change_pct": None}
+    first_open = window[0]["open"]
+    change_pct = ((snap["close_price"] - first_open) / first_open * 100.0) if first_open else None
+    return {
+        "symbol": symbol,
+        "last": snap["close_price"],
+        "high": max(c["high"] for c in window),
+        "low": min(c["low"] for c in window),
+        "volume": sum(c["volume"] for c in window),
+        "change_pct": change_pct,
+    }
+
+
+def _run_claude_sample(symbol: str, snap: Dict, rule_sig: Dict) -> tuple:
     """
     Cross-check the rule-based proxy against a real Claude call on the same
     historical snapshot. The snapshot mirrors live's
-    snapshot_builder.build_enriched_snapshot() key set; fields that can't be
-    reconstructed from historical OHLCV alone (funding rate, fear & greed,
-    and everything in ticker but `last`) are set to None — see the PR report
-    for the full list.
+    snapshot_builder.build_enriched_snapshot() key set; funding_rate and
+    fear_greed_index can't be reconstructed from historical OHLCV alone and
+    are set to None — see the PR report for the full list.
+
+    Returns (record, is_fallback_failure). is_fallback_failure is True only
+    when run_analysis() silently fell back to its NO_TRADE placeholder
+    (bad key / no credits / persistent parse failure), as opposed to a
+    genuine Claude NO_TRADE call or a raised exception — the caller uses it
+    to abort early if the first 3 samples all fail this way.
     """
     record = {
         "timestamp": snap["timestamp"],
@@ -308,10 +356,7 @@ def _run_claude_sample(symbol: str, snap: Dict, rule_sig: Dict) -> Dict:
     try:
         historical_snapshot = {
             "symbol": symbol,
-            "ticker": {
-                "symbol": symbol, "last": snap["close_price"],
-                "high": None, "low": None, "volume": None, "change_pct": None,
-            },
+            "ticker": _derive_historical_ticker(symbol, snap),
             "funding_rate": None,
             "fear_greed_index": None,
             "candles_1d": snap["candles_1d"],
@@ -322,11 +367,22 @@ def _run_claude_sample(symbol: str, snap: Dict, rule_sig: Dict) -> Dict:
             "kill_zone": snap["kill_zone"],
         }
         claude_exec = signal_simulator.claude_sample_signal(historical_snapshot)
+
+        no_trade_reason = claude_exec.get("no_trade_reason") or ""
+        if no_trade_reason.startswith(_CLAUDE_FALLBACK_MARKER):
+            record["error"] = no_trade_reason
+            return record, True
+
+        rule_decision = rule_sig.get("decision")
+        rule_direction = rule_sig.get("direction")
+        claude_decision = claude_exec.get("decision")
+        claude_direction = claude_exec.get("direction")
         claude_entry = claude_exec.get("entry_price")
         claude_sl = claude_exec.get("stop_loss")
+        both_trade = rule_decision == "TRADE" and claude_decision == "TRADE"
         record.update({
-            "claude_decision": claude_exec.get("decision"),
-            "claude_direction": claude_exec.get("direction"),
+            "claude_decision": claude_decision,
+            "claude_direction": claude_direction,
             "claude_entry": claude_entry,
             "claude_sl": claude_sl,
             "claude_tp1": claude_exec.get("tp1"),
@@ -334,13 +390,47 @@ def _run_claude_sample(symbol: str, snap: Dict, rule_sig: Dict) -> Dict:
             "claude_confidence": claude_exec.get("confidence"),
             "claude_rr": claude_exec.get("rr_ratio"),
             "claude_sl_pct": _sl_pct(claude_entry, claude_sl),
-            "agree_decision": rule_sig.get("decision") == claude_exec.get("decision"),
-            "agree_direction": rule_sig.get("direction") == claude_exec.get("direction"),
+            "agree_decision": rule_decision == claude_decision,
+            "agree_direction": (rule_direction == claude_direction) if both_trade else None,
         })
+        return record, False
     except Exception as e:
         logger.warning(f"[Backtest] Claude sample failed at {snap['timestamp']}: {e}")
         record["error"] = str(e)
-    return record
+        return record, False
+
+
+def _compute_claude_vs_proxy(sampled: List[Dict]) -> Optional[Dict]:
+    """Aggregate rule-vs-Claude agreement/sl_pct stats over successful
+    (non-error) samples — mirrors the CLI markdown's "Claude vs proxy"
+    section so API/programmatic callers get the same numbers."""
+    valid = [s for s in sampled if "error" not in s]
+    if not valid:
+        return None
+
+    rule_trade_sl_pcts = [
+        s["rule_sl_pct"] for s in valid
+        if s.get("rule_decision") == "TRADE" and s.get("rule_sl_pct") is not None
+    ]
+    claude_trade_sl_pcts = [
+        s["claude_sl_pct"] for s in valid
+        if s.get("claude_decision") == "TRADE" and s.get("claude_sl_pct") is not None
+    ]
+    both_trade = [s for s in valid if s.get("rule_decision") == "TRADE" and s.get("claude_decision") == "TRADE"]
+    decision_agree_n = sum(1 for s in valid if s.get("agree_decision"))
+    direction_agree_n = sum(1 for s in both_trade if s.get("agree_direction"))
+    claude_trade_n = sum(1 for s in valid if s.get("claude_decision") == "TRADE")
+
+    return {
+        "rule_sl_pct_stats": _sl_pct_stats(rule_trade_sl_pcts),
+        "claude_sl_pct_stats": _sl_pct_stats(claude_trade_sl_pcts),
+        "decision_agreement_pct": round(decision_agree_n / len(valid) * 100.0, 2),
+        "direction_agreement_pct": (
+            round(direction_agree_n / len(both_trade) * 100.0, 2) if both_trade else None
+        ),
+        "both_trade_n": len(both_trade),
+        "claude_trade_n": claude_trade_n,
+    }
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -584,6 +674,7 @@ def _empty_result(
         "decision_schedule": decision_schedule,
         "decision_bars": decision_bars,
         "signal_config": _signal_config_as_dict(signal_config or SignalConfig()),
+        "claude_vs_proxy": _compute_claude_vs_proxy(sampled),
         **_NEUTRAL_DIAGNOSTICS,
         "note": "No qualifying structural setups found in this range.",
     }

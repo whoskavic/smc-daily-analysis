@@ -163,10 +163,15 @@ def _is_duplicate_signal(order: Dict, sig: Dict) -> bool:
 
 
 def _setup_key(sig: Dict) -> tuple:
-    """Hashable setup identity — rounds to 8 decimals rather than the
-    isclose(rel_tol=1e-9) comparison _same_setup uses, but at the price
-    magnitudes this backtester deals with the two agree in practice, and a
-    set lookup replaces an O(n) scan over every setup ever placed."""
+    """Hashable setup identity. Rounding to 8 decimal places is actually
+    STRICTER than the math.isclose(rel_tol=1e-9) comparison _same_setup uses
+    at BTC-level prices (~$60k): isclose's relative tolerance there is an
+    absolute ~6e-5, while 8dp rounding only tolerates ~5e-9. That's fine
+    because rule_based_signal is a deterministic function of the same
+    smc_levels/current_price — a re-fired identical setup produces
+    bit-identical floats, not merely close ones, so the tighter equality
+    never misses a real match. A set lookup replaces an O(n) scan over every
+    setup ever placed."""
     return (
         sig["direction"],
         round(sig["entry_price"], 8),
