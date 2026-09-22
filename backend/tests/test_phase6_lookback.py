@@ -146,6 +146,57 @@ class TestFetchWithLookback(unittest.TestCase):
         self.assertFalse(fetch["lookback_complete"])
         self.assertEqual(fetch["warmup_bars"], 0)
 
+    def test_stale_1d_cache_triggers_refetch_and_recovers_completeness(self):
+        """data_loader's cache accepts a >=95%-coverage hit — on a long
+        backtest, a cache holding only the in-range portion (no real
+        lookback) can pass that check and be returned as-is. Simulate that:
+        the first (use_cache=True) call for 1D returns only [since, until),
+        ignoring how far back it was actually asked to fetch; a fresh
+        (use_cache=False) pull returns the real, fully-lookback-covered
+        history."""
+        full = _full_by_tf(total_days=40)
+        since = REF + timedelta(days=32)
+        until = REF + timedelta(days=40)
+
+        def fetch(symbol, timeframe, since_arg, until_arg, use_cache=True):
+            src = full[timeframe]
+            lo = since if (timeframe == "1d" and use_cache) else since_arg
+            return [c for c in src if lo <= datetime.fromisoformat(c["timestamp"]) < until_arg]
+
+        with patch.object(engine.data_loader, "fetch_historical_ohlcv", side_effect=fetch):
+            result = engine._fetch_with_lookback("BTC/USDT", since, until)
+
+        self.assertTrue(result["lookback_by_tf"]["1d"]["complete"])
+        self.assertTrue(result["lookback_complete"])
+        recovered_earliest = datetime.fromisoformat(result["lookback_by_tf"]["1d"]["earliest"])
+        self.assertLess(recovered_earliest, since - timedelta(days=smc_replay.WINDOW_1D))
+
+    def test_genuinely_missing_1d_history_marks_incomplete(self):
+        """Unlike the stale-cache case, here NEITHER the cached nor the
+        fresh (use_cache=False) pull for 1D reaches back far enough — the
+        exchange genuinely lacks the history. lookback_by_tf["1d"] stays
+        incomplete and drags the overall lookback_complete down, even
+        though every other timeframe is fully covered."""
+        full = _full_by_tf(total_days=40)
+        since = REF + timedelta(days=32)
+        until = REF + timedelta(days=40)
+
+        def fetch(symbol, timeframe, since_arg, until_arg, use_cache=True):
+            src = full[timeframe]
+            lo = since if timeframe == "1d" else since_arg
+            return [c for c in src if lo <= datetime.fromisoformat(c["timestamp"]) < until_arg]
+
+        with patch.object(engine.data_loader, "fetch_historical_ohlcv", side_effect=fetch):
+            result = engine._fetch_with_lookback("BTC/USDT", since, until)
+
+        self.assertFalse(result["lookback_by_tf"]["1d"]["complete"])
+        self.assertFalse(result["lookback_complete"])
+        # the other timeframes were genuinely fetched with full lookback and
+        # aren't dragged down by 1D's shortfall individually
+        self.assertTrue(result["lookback_by_tf"]["15m"]["complete"])
+        self.assertTrue(result["lookback_by_tf"]["1h"]["complete"])
+        self.assertTrue(result["lookback_by_tf"]["4h"]["complete"])
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # run_backtest — decisions/signals/trades/equity curve/metrics scoped to
@@ -153,6 +204,23 @@ class TestFetchWithLookback(unittest.TestCase):
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestRunBacktestLookback(unittest.TestCase):
+    def test_min_bars_required_counts_in_range_bars_only(self):
+        """MIN_BARS_REQUIRED must gate on bars actually in [since, until) —
+        not the lookback-inflated fetched array. Here the fetched 15m array
+        (with a full ~32-day lookback) is ~292 bars, comfortably over
+        MIN_BARS_REQUIRED(200), but the requested range itself is only 100
+        bars — too few to backtest — and that must still raise."""
+        full = _full_by_tf(total_days=40)
+        since = REF + timedelta(days=32)
+        until = since + timedelta(minutes=15 * 100)  # 100 in-range 15m bars only
+
+        with patch.object(engine.data_loader, "fetch_historical_ohlcv", side_effect=_fetch_from(full)):
+            with self.assertRaises(ValueError) as ctx:
+                engine.run_backtest("BTC/USDT", since=since, until=until)
+
+        self.assertIn("100 bars", str(ctx.exception))
+        self.assertIn("need >= 200", str(ctx.exception))
+
     def test_full_requested_range_is_decision_bars_when_lookback_available(self):
         """Before this fix, the first DEFAULT_WARMUP_BARS(120) bars of ANY
         requested range were burned as bar-count warmup — even 30 days in,
