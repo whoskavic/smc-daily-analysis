@@ -14,6 +14,7 @@ import tempfile
 import types
 import unittest
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 BACKEND = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
@@ -305,6 +306,7 @@ class TestOrderLifecycle(unittest.TestCase):
         self.assertEqual(r["total_trades"], 0)
 
     def test_replacement_cancels_old_and_places_new(self):
+        # Different entry/SL/TP -> a genuinely new setup, still counted as "replaced".
         n = 20
         candles = _flat(n)
         signals = [_long_signal(2), _long_signal(4, entry=150, sl=145, tp1=160, tp2=170)]
@@ -312,6 +314,37 @@ class TestOrderLifecycle(unittest.TestCase):
         r = trade_simulator.simulate(candles, signals, bias, SimConfig(order_ttl_bars=20))
         self.assertEqual(r["orders"]["cancelled"]["replaced"], 1)
         self.assertEqual(r["orders"]["placed"], 2)
+        self.assertEqual(r["orders"]["duplicate_signals"], 0)
+
+    def test_duplicate_signals_do_not_reset_ttl(self):
+        # Identical signal re-firing every bar the setup persists (bars 2-6)
+        # must not reset the TTL clock — the order should still expire on
+        # schedule from its FIRST placement (active_from = 3, ttl=5 -> cancel
+        # at bar 7), not get "replaced" 4 times and live indefinitely.
+        n = 20
+        candles = _flat(n)  # never touches entry(100) anywhere
+        signals = [_long_signal(b) for b in range(2, 7)]  # bars 2,3,4,5,6 — identical params
+        bias = {i: "bullish" for i in range(n)}
+        r = trade_simulator.simulate(candles, signals, bias, SimConfig(order_ttl_bars=5))
+        self.assertEqual(r["orders"]["placed"], 1)
+        self.assertEqual(r["orders"]["cancelled"]["replaced"], 0)
+        self.assertEqual(r["orders"]["duplicate_signals"], 4)  # bars 3,4,5,6
+        self.assertEqual(r["orders"]["cancelled"]["ttl"], 1)
+        self.assertEqual(r["total_trades"], 0)
+
+    def test_ttl_gives_exactly_n_fill_chances(self):
+        # ttl=2: fill chances are bars active_from(=3) and active_from+1(=4)
+        # only. Bar 5 dips through entry, but by then the order must already
+        # be cancelled — a lingering off-by-one would let it fill there.
+        n = 20
+        candles = _flat(n)
+        candles[5] = C(_ts(5), 102, 103, 99.5, 100.5)  # would fill entry(100) if still pending
+        signals = [_long_signal(2)]
+        bias = {i: "bullish" for i in range(n)}
+        r = trade_simulator.simulate(candles, signals, bias, SimConfig(order_ttl_bars=2))
+        self.assertEqual(r["orders"]["filled"], 0)
+        self.assertEqual(r["orders"]["cancelled"]["ttl"], 1)
+        self.assertEqual(r["total_trades"], 0)
 
     def test_new_signal_while_position_open_is_ignored(self):
         n = 20
@@ -362,6 +395,8 @@ class TestPositionEvents(unittest.TestCase):
         self.assertEqual(r["trades"][0]["outcome"], "tp1_be")
 
     def test_tp1_then_tp2_outcome(self):
+        # tp2 strictly beyond tp1 -> deferred behavior: TP1 partial on bar 7,
+        # remainder closes on a LATER bar (8) once TP2 is actually reached.
         n = 20
         candles = _flat(n)
         candles[6] = C(_ts(6), 102, 103, 99.5, 100.5)
@@ -371,6 +406,30 @@ class TestPositionEvents(unittest.TestCase):
         bias = {i: "bullish" for i in range(n)}
         r = trade_simulator.simulate(candles, signals, bias, SimConfig(order_ttl_bars=20))
         self.assertEqual(r["trades"][0]["outcome"], "tp2")
+        self.assertEqual(r["trades"][0]["exit_time"], _ts(8))  # closed on TP2's bar, not TP1's
+
+    def test_tp1_equals_tp2_closes_full_position_on_tp1_bar(self):
+        # Live places TP1 and TP2 as two take_profit_market orders at the same
+        # price when there's no liquidity target beyond TP1 — both trigger
+        # together, so the whole position must close on that single bar.
+        n = 20
+        candles = _flat(n)
+        candles[6] = C(_ts(6), 102, 103, 99.5, 100.5)  # fill
+        candles[7] = C(_ts(7), 100.5, 106, 100, 105.5)  # reaches tp1==tp2 (105)
+        signals = [_long_signal(2, tp1=105.0, tp2=105.0)]
+        bias = {i: "bullish" for i in range(n)}
+        r = trade_simulator.simulate(candles, signals, bias, SimConfig(order_ttl_bars=20))
+        self.assertEqual(len(r["trades"]), 1)
+        trade = r["trades"][0]
+        self.assertEqual(trade["outcome"], "tp2")
+        self.assertEqual(trade["exit_time"], _ts(7))  # closed same bar as TP1/TP2 hit
+        # Full qty closed at ~105 (minus slippage), not just tp1_fraction (50%).
+        _, qty, _ = trade_simulator._size_position(1000.0, 100.0, 95.0, SimConfig())
+        self.assertAlmostEqual(trade["qty"], qty, places=6)
+        self.assertGreater(trade["pnl"], 0)
+        # Sanity: a full-qty exit near 105 nets roughly double a half-qty exit at 105.
+        half_qty_pnl_approx = (qty / 2) * (105 * (1 - 0.0005) - 100)
+        self.assertGreater(trade["pnl"], half_qty_pnl_approx * 1.5)
 
     def test_sl_gap_exit_at_open(self):
         n = 20
@@ -445,6 +504,56 @@ class TestShortDirection(unittest.TestCase):
         self.assertEqual(r["trades"][0]["outcome"], "tp2")
         self.assertGreater(r["trades"][0]["pnl"], 0)
         self.assertEqual(r["trades"][0]["entry_price"], 100.0)  # max(open=98, entry=100)
+
+
+class TestSizingUsesOrderPrice(unittest.TestCase):
+    def test_gap_fill_sizes_on_order_price_not_fill_price(self):
+        # Order entry=100, sl=95 -> sl_dist_pct=0.05 off the ORDER price.
+        # Fill gaps down to 90, but margin/qty must match the non-gap case
+        # exactly (live sizes at placement time, before the fill is known).
+        n = 20
+        candles = _flat(n)
+        candles[6] = C(_ts(6), 90, 91, 89, 90.5)  # gap straight through entry(100)
+        signals = [_long_signal(2)]  # entry=100, sl=95
+        bias = {i: "bullish" for i in range(n)}
+        r = trade_simulator.simulate(candles, signals, bias, SimConfig())
+        trade = r["trades"][0]
+        self.assertEqual(trade["entry_price"], 90.0)  # actual fill price, for PnL
+        # margin/qty match the order-price-based calc: equity=1000, risk_pct=1%
+        # => risk_usdt=10, sl_dist_pct=(100-95)/100=0.05, leverage=10 => margin=20, qty=2.0
+        self.assertAlmostEqual(trade["margin"], 20.0, places=2)
+        self.assertAlmostEqual(trade["qty"], 2.0, places=4)
+
+
+class TestMarginCappedTrades(unittest.TestCase):
+    def test_margin_capped_trades_counted(self):
+        n = 12
+        candles = _flat(n)
+        candles[6] = C(_ts(6), 100, 101, 99.5, 100.5)
+        candles[7] = C(_ts(7), 100.5, 106, 100, 105.5)
+        candles[8] = C(_ts(8), 105.5, 111, 105, 110.5)
+        for i in range(9, n):
+            candles[i] = C(_ts(i), 110, 111, 109, 110)
+        signals = [_long_signal(2)]
+        bias = {i: "bullish" for i in range(n)}
+        # Tiny equity + huge risk_pct forces the margin cap.
+        cfg = SimConfig(init_cash=10.0, sizing_mode="risk_pct", risk_pct=1000.0, leverage=1)
+        r = trade_simulator.simulate(candles, signals, bias, cfg)
+        self.assertEqual(r["orders"]["margin_capped_trades"], 1)
+        self.assertTrue(r["trades"][0]["margin_capped"])
+
+    def test_margin_capped_trades_zero_when_no_cap(self):
+        n = 12
+        candles = _flat(n)
+        candles[6] = C(_ts(6), 100, 101, 99.5, 100.5)
+        candles[7] = C(_ts(7), 100.5, 106, 100, 105.5)
+        candles[8] = C(_ts(8), 105.5, 111, 105, 110.5)
+        for i in range(9, n):
+            candles[i] = C(_ts(i), 110, 111, 109, 110)
+        signals = [_long_signal(2)]
+        bias = {i: "bullish" for i in range(n)}
+        r = trade_simulator.simulate(candles, signals, bias, SimConfig())
+        self.assertEqual(r["orders"]["margin_capped_trades"], 0)
 
 
 class TestSizing(unittest.TestCase):
@@ -594,6 +703,125 @@ class TestEngineSimModeDispatch(unittest.TestCase):
                 until=datetime(2026, 1, 2, tzinfo=timezone.utc),
                 sim_mode="not_a_mode",
             )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# router / CLI — risk_pct and leverage default from settings when omitted
+# ─────────────────────────────────────────────────────────────────────────────
+
+_EMPTY_ENGINE_RESULT_TEMPLATE = {
+    "since": "2026-01-01T00:00:00+00:00", "until": "2026-01-02T00:00:00+00:00",
+    "bars_analyzed": 0, "signals_generated": 0, "total_trades": 0,
+    "final_equity": None, "total_return_pct": 0.0, "win_rate_pct": 0.0,
+    "sharpe_ratio": 0.0, "max_drawdown_pct": 0.0, "profit_factor": 0.0,
+    "expectancy_r": 0.0, "avg_win_r": 0.0, "avg_loss_r": 0.0,
+    "trades": [], "equity_curve": [], "claude_sample": [], "orders": None,
+    "sim_config": None, "note": None,
+}
+
+
+class TestSettingsDefaultsForRiskAndLeverage(unittest.TestCase):
+    def test_router_pulls_risk_pct_and_leverage_from_settings_when_omitted(self):
+        import asyncio
+        from app.routers import backtest as backtest_router
+
+        captured = {}
+
+        def fake_run_backtest(**kwargs):
+            captured.update(kwargs)
+            return {"symbol": kwargs["symbol"], "sim_mode": kwargs["sim_mode"], **_EMPTY_ENGINE_RESULT_TEMPLATE}
+
+        req = backtest_router.BacktestRequest(
+            symbol="BTC/USDT",
+            since=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            until=datetime(2026, 1, 2, tzinfo=timezone.utc),
+            save=False,
+            # risk_pct/leverage intentionally omitted -> None -> from settings
+        )
+        with patch.object(backtest_router, "run_backtest", side_effect=fake_run_backtest), \
+             patch.object(_settings, "risk_per_trade_pct", 7.0), \
+             patch.object(_settings, "max_leverage", 33):
+            asyncio.run(backtest_router.run_backtest_endpoint(req))
+
+        self.assertIsNotNone(captured["sim_config"])
+        self.assertEqual(captured["sim_config"].risk_pct, 7.0)
+        self.assertEqual(captured["sim_config"].leverage, 33)
+
+    def test_router_respects_explicit_risk_pct_and_leverage(self):
+        import asyncio
+        from app.routers import backtest as backtest_router
+
+        captured = {}
+
+        def fake_run_backtest(**kwargs):
+            captured.update(kwargs)
+            return {"symbol": kwargs["symbol"], "sim_mode": kwargs["sim_mode"], **_EMPTY_ENGINE_RESULT_TEMPLATE}
+
+        req = backtest_router.BacktestRequest(
+            symbol="BTC/USDT",
+            since=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            until=datetime(2026, 1, 2, tzinfo=timezone.utc),
+            save=False, risk_pct=2.5, leverage=7,
+        )
+        with patch.object(backtest_router, "run_backtest", side_effect=fake_run_backtest), \
+             patch.object(_settings, "risk_per_trade_pct", 7.0), \
+             patch.object(_settings, "max_leverage", 33):
+            asyncio.run(backtest_router.run_backtest_endpoint(req))
+
+        self.assertEqual(captured["sim_config"].risk_pct, 2.5)
+        self.assertEqual(captured["sim_config"].leverage, 7)
+
+    def test_cli_pulls_risk_pct_and_leverage_from_settings_when_omitted(self):
+        from app.scripts import run_backtest as cli
+
+        captured = {}
+
+        def fake_run_backtest(**kwargs):
+            captured.update(kwargs)
+            return {"symbol": kwargs["symbol"], "sim_mode": kwargs["sim_mode"], **_EMPTY_ENGINE_RESULT_TEMPLATE}
+
+        with patch.object(cli, "_ensure_running_from_backend", return_value=None), \
+             patch.object(cli, "run_backtest", side_effect=fake_run_backtest), \
+             patch.object(_settings, "risk_per_trade_pct", 8.0), \
+             patch.object(_settings, "max_leverage", 44):
+            cli.main(["--symbol", "BTC/USDT", "--since", "2026-01-01", "--until", "2026-01-02", "--no-save"])
+
+        self.assertEqual(captured["sim_config"].risk_pct, 8.0)
+        self.assertEqual(captured["sim_config"].leverage, 44)
+
+    def test_cli_respects_explicit_risk_pct_and_leverage(self):
+        from app.scripts import run_backtest as cli
+
+        captured = {}
+
+        def fake_run_backtest(**kwargs):
+            captured.update(kwargs)
+            return {"symbol": kwargs["symbol"], "sim_mode": kwargs["sim_mode"], **_EMPTY_ENGINE_RESULT_TEMPLATE}
+
+        with patch.object(cli, "_ensure_running_from_backend", return_value=None), \
+             patch.object(cli, "run_backtest", side_effect=fake_run_backtest), \
+             patch.object(_settings, "risk_per_trade_pct", 8.0), \
+             patch.object(_settings, "max_leverage", 44):
+            cli.main(["--symbol", "BTC/USDT", "--since", "2026-01-01", "--until", "2026-01-02",
+                      "--no-save", "--risk-pct", "3.0", "--leverage", "6"])
+
+        self.assertEqual(captured["sim_config"].risk_pct, 3.0)
+        self.assertEqual(captured["sim_config"].leverage, 6)
+
+
+class TestCliRunsFromBackendDir(unittest.TestCase):
+    def test_ensure_running_from_backend_exits_when_cwd_mismatched(self):
+        from app.scripts import run_backtest as cli
+
+        with patch.object(cli.Path, "cwd", return_value=Path("/definitely/not/backend")):
+            with self.assertRaises(SystemExit):
+                cli._ensure_running_from_backend()
+
+    def test_ensure_running_from_backend_passes_when_cwd_matches(self):
+        from app.scripts import run_backtest as cli
+
+        with patch.object(cli.Path, "cwd", return_value=cli.BACKEND_DIR):
+            cli._ensure_running_from_backend()  # must not raise
 
 
 if __name__ == "__main__":

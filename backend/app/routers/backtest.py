@@ -34,10 +34,12 @@ class BacktestRequest(BaseModel):
     sim_mode: Literal["event", "vbt_legacy"] = "event"
     order_ttl_bars: int = Field(_DEFAULT_SIM.order_ttl_bars, gt=0)
     sizing_mode: Literal["risk_pct", "fixed_risk_usdt", "fixed_margin_usdt"] = _DEFAULT_SIM.sizing_mode
-    risk_pct: float = Field(_DEFAULT_SIM.risk_pct, gt=0)
+    # risk_pct/leverage default to None so the live-mirroring settings
+    # (risk_per_trade_pct / max_leverage) are used unless explicitly overridden.
+    risk_pct: Optional[float] = Field(None, gt=0)
     fixed_risk_usdt: float = Field(_DEFAULT_SIM.fixed_risk_usdt, gt=0)
     fixed_margin_usdt: float = Field(_DEFAULT_SIM.fixed_margin_usdt, gt=0)
-    leverage: int = Field(_DEFAULT_SIM.leverage, gt=0)
+    leverage: Optional[int] = Field(None, gt=0)
 
 
 @router.post("/run")
@@ -50,16 +52,19 @@ async def run_backtest_endpoint(req: BacktestRequest):
 
     sim_config = None
     if req.sim_mode == "event":
+        from app.config import settings
+        risk_pct = req.risk_pct if req.risk_pct is not None else getattr(settings, "risk_per_trade_pct", 1.0)
+        leverage = req.leverage if req.leverage is not None else getattr(settings, "max_leverage", 10)
         sim_config = SimConfig(
             init_cash=req.init_cash,
             fees_pct=req.fees_pct,
             slippage_pct=req.slippage_pct,
             order_ttl_bars=req.order_ttl_bars,
             sizing_mode=req.sizing_mode,
-            risk_pct=req.risk_pct,
+            risk_pct=risk_pct,
             fixed_risk_usdt=req.fixed_risk_usdt,
             fixed_margin_usdt=req.fixed_margin_usdt,
-            leverage=req.leverage,
+            leverage=leverage,
         )
 
     try:

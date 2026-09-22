@@ -1,9 +1,14 @@
 # Backtest reports
 
 Output of `python -m app.scripts.run_backtest` (see that module's docstring
-for CLI flags). Long-range runs (e.g. multi-year) are meant to be run from
-here rather than through the synchronous `/api/backtest/run` HTTP endpoint,
-which sits behind nginx and isn't built for requests that take minutes.
+for CLI flags). Long-range runs (e.g. multi-year) are meant to use this CLI
+rather than the synchronous `/api/backtest/run` HTTP endpoint, which sits
+behind nginx and isn't built for requests that take minutes.
+
+**Run the CLI from `backend/`**, not from elsewhere — `.env` and the SQLite
+DB URL resolve relative to the current working directory, so running it
+from another directory silently picks up the wrong config/database. The
+script checks this at startup and refuses to run otherwise.
 
 Each run writes two files, named `backtest_<SYMBOL>_<since>_<until>_<utc-timestamp>.json/.md`,
 e.g.:

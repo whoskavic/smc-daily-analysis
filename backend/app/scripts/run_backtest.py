@@ -7,7 +7,12 @@ script calls the same engine.run_backtest() directly, writes the full
 result plus a human-readable summary to backend/reports/, and prints the
 summary.
 
-Usage (from anywhere — output paths always resolve relative to backend/):
+Must be run from the backend/ directory: `.env` (env_file=".env") and the
+default SQLite URL (sqlite:///./smc_trading.db) both resolve relative to the
+current working directory, not to this file's location.
+
+Usage:
+    cd backend
     python -m app.scripts.run_backtest --symbol BTC/USDT \\
         --since 2024-09-01 --until 2026-09-01 \\
         [--sim-mode event] [--sizing-mode risk_pct --risk-pct 1.0] \\
@@ -49,12 +54,27 @@ def _parse_args(argv=None) -> argparse.Namespace:
     p.add_argument("--order-ttl-bars", type=int, default=SimConfig.order_ttl_bars)
     p.add_argument("--sizing-mode", choices=["risk_pct", "fixed_risk_usdt", "fixed_margin_usdt"],
                     default=SimConfig.sizing_mode)
-    p.add_argument("--risk-pct", type=float, default=SimConfig.risk_pct)
+    p.add_argument("--risk-pct", type=float, default=None,
+                    help="Default: settings.risk_per_trade_pct (live-mirroring)")
     p.add_argument("--fixed-risk-usdt", type=float, default=SimConfig.fixed_risk_usdt)
     p.add_argument("--fixed-margin-usdt", type=float, default=SimConfig.fixed_margin_usdt)
-    p.add_argument("--leverage", type=int, default=SimConfig.leverage)
+    p.add_argument("--leverage", type=int, default=None,
+                    help="Default: settings.max_leverage (live-mirroring)")
     p.add_argument("--no-save", action="store_true", help="Don't persist the run to the BacktestRun table.")
     return p.parse_args(argv)
+
+
+def _ensure_running_from_backend() -> None:
+    cwd = Path.cwd().resolve()
+    if cwd != BACKEND_DIR:
+        print(
+            f"error: run this from the backend/ directory — cwd is {cwd}, expected {BACKEND_DIR}.\n"
+            f".env and the SQLite DB URL resolve relative to the current working directory, "
+            f"so running from elsewhere silently picks up the wrong config/database.\n"
+            f"Fix: cd {BACKEND_DIR} && python -m app.scripts.run_backtest ...",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
 
 def _report_paths(symbol: str, since: datetime, until: datetime) -> tuple[Path, Path]:
@@ -102,6 +122,8 @@ def _render_summary_md(result: dict, args: argparse.Namespace) -> str:
         for reason, count in orders["cancelled"].items():
             lines.append(f"| cancelled.{reason} | {count} |")
         lines.append(f"| ignored_in_position | {orders['ignored_in_position']} |")
+        lines.append(f"| duplicate_signals | {orders.get('duplicate_signals', 0)} |")
+        lines.append(f"| margin_capped_trades | {orders.get('margin_capped_trades', 0)} |")
         lines.append("")
 
     trades = result.get("trades", [])
@@ -121,20 +143,29 @@ def _render_summary_md(result: dict, args: argparse.Namespace) -> str:
 
 
 def main(argv=None) -> None:
+    _ensure_running_from_backend()
     args = _parse_args(argv)
 
     sim_config = None
+    risk_pct = args.risk_pct
+    leverage = args.leverage
     if args.sim_mode == "event":
+        if risk_pct is None or leverage is None:
+            from app.config import settings
+            if risk_pct is None:
+                risk_pct = getattr(settings, "risk_per_trade_pct", 1.0)
+            if leverage is None:
+                leverage = getattr(settings, "max_leverage", 10)
         sim_config = SimConfig(
             init_cash=args.init_cash,
             fees_pct=args.fees_pct,
             slippage_pct=args.slippage_pct,
             order_ttl_bars=args.order_ttl_bars,
             sizing_mode=args.sizing_mode,
-            risk_pct=args.risk_pct,
+            risk_pct=risk_pct,
             fixed_risk_usdt=args.fixed_risk_usdt,
             fixed_margin_usdt=args.fixed_margin_usdt,
-            leverage=args.leverage,
+            leverage=leverage,
         )
 
     result = run_backtest(
@@ -151,9 +182,9 @@ def main(argv=None) -> None:
 
     until_dt = args.until or datetime.now(timezone.utc)
     json_path, md_path = _report_paths(args.symbol, args.since, until_dt)
-    json_path.write_text(json.dumps(result, indent=2))
+    json_path.write_text(json.dumps(result, indent=2), encoding="utf-8")
     summary = _render_summary_md(result, args)
-    md_path.write_text(summary)
+    md_path.write_text(summary, encoding="utf-8")
 
     if not args.no_save:
         from app.routers.backtest import BacktestRequest, _save_run
@@ -162,9 +193,9 @@ def main(argv=None) -> None:
             init_cash=args.init_cash, fees_pct=args.fees_pct, slippage_pct=args.slippage_pct,
             claude_sample_pct=args.claude_sample_pct, save=True,
             sim_mode=args.sim_mode, order_ttl_bars=args.order_ttl_bars,
-            sizing_mode=args.sizing_mode, risk_pct=args.risk_pct,
+            sizing_mode=args.sizing_mode, risk_pct=risk_pct,
             fixed_risk_usdt=args.fixed_risk_usdt, fixed_margin_usdt=args.fixed_margin_usdt,
-            leverage=args.leverage,
+            leverage=leverage,
         )
         run_id = _save_run(req, result)
         print(f"Saved as BacktestRun id={run_id}")

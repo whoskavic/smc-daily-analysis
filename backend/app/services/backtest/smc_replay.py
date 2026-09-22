@@ -123,7 +123,7 @@ def replay(
             candles, opens_ms = htf_sources[name]
             cutoff_ms = as_of_close_ms - duration_ms
             closed_count = bisect.bisect_right(opens_ms, cutoff_ms)
-            closed = candles[:closed_count]
+            closed = candles[max(0, closed_count - size):closed_count]
 
             period_open_ms = (t_ms // duration_ms) * duration_ms
             period_closed = (period_open_ms + duration_ms) <= as_of_close_ms

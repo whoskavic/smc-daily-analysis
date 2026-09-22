@@ -134,6 +134,20 @@ def _is_opposite_bias(bias: Optional[str], direction: str) -> bool:
     return bias == "bullish"
 
 
+def _is_duplicate_signal(order: Dict, sig: Dict) -> bool:
+    """Same direction and same entry/SL/TP1/TP2 as the pending order — the
+    rule-based signal re-firing on every bar a setup persists, not a genuinely
+    new setup."""
+    if order["direction"] != sig["direction"]:
+        return False
+    return (
+        math.isclose(order["entry_price"], sig["entry_price"], rel_tol=1e-9)
+        and math.isclose(order["stop_loss"], sig["stop_loss"], rel_tol=1e-9)
+        and math.isclose(order["tp1"], sig["tp1"], rel_tol=1e-9)
+        and math.isclose(order["tp2"], sig["tp2"], rel_tol=1e-9)
+    )
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Position event checks — priority SL > TP1 > TP2, one event per bar
 # ─────────────────────────────────────────────────────────────────────────────
@@ -196,6 +210,7 @@ def simulate(
         "placed": 0, "filled": 0,
         "cancelled": {"replaced": 0, "bias_flip": 0, "tp1_before_fill": 0, "ttl": 0},
         "ignored_in_position": 0,
+        "duplicate_signals": 0,
     }
 
     def _new_order(sig: Dict, placed_bar: int) -> Dict:
@@ -211,7 +226,10 @@ def simulate(
         }
 
     def _open_position(ord_: Dict, fill_price: float, bar_idx: int, bar: Dict):
-        margin, qty, margin_capped = _size_position(equity, fill_price, ord_["stop_loss"], config)
+        # Sized on the ORDER price (what live knows at placement time via
+        # calculate_position_size), not the actual fill price — a gap fill
+        # must not silently change position size. PnL still uses fill_price.
+        margin, qty, margin_capped = _size_position(equity, ord_["entry_price"], ord_["stop_loss"], config)
         entry_fee = config.fees_pct * qty * fill_price
         return {
             "signal_time": ord_["signal_time"],
@@ -299,11 +317,16 @@ def simulate(
                     state_kind = None
                     position = None
             else:
+                is_dup = sig_here is not None and _is_duplicate_signal(order, sig_here)
+                if is_dup:
+                    order_counts["duplicate_signals"] += 1
+                    consumed_signal = True
+
                 if config.cancel_on_tp1_before_fill and _reached_tp1(order, bar):
                     order_counts["cancelled"]["tp1_before_fill"] += 1
                     state_kind = None
                     order = None
-                elif sig_here is not None:
+                elif sig_here is not None and not is_dup:
                     order_counts["cancelled"]["replaced"] += 1
                     order = _new_order(sig_here, placed_bar=j)
                     order_counts["placed"] += 1
@@ -312,7 +335,7 @@ def simulate(
                     order_counts["cancelled"]["bias_flip"] += 1
                     state_kind = None
                     order = None
-                elif (j - order["active_from"]) >= config.order_ttl_bars:
+                elif (j - order["active_from"] + 1) >= config.order_ttl_bars:
                     order_counts["cancelled"]["ttl"] += 1
                     state_kind = None
                     order = None
@@ -331,16 +354,25 @@ def simulate(
                         state_kind = None
                         position = None
                     elif _check_tp(position, "tp1", bar):
-                        tp1_qty = position["qty_total"] * config.tp1_fraction
-                        tp1_qty = min(tp1_qty, position["qty_remaining"])
-                        _apply_exit_leg(position, tp1_qty, position["tp1"], bar)
-                        position["tp1_hit"] = True
-                        if config.move_sl_to_be_after_tp1:
-                            position["stop_loss"] = position["entry_price"]
-                        if position["qty_remaining"] <= 1e-12:
+                        if math.isclose(position["tp2"], position["tp1"], rel_tol=1e-9):
+                            # Live places TP1 and TP2 as two take_profit_market
+                            # orders at the same price — they trigger together,
+                            # so the whole position closes on this bar.
+                            _apply_exit_leg(position, position["qty_remaining"], position["tp2"], bar)
                             trades.append(_finalize_trade(position, "tp2"))
                             state_kind = None
                             position = None
+                        else:
+                            tp1_qty = position["qty_total"] * config.tp1_fraction
+                            tp1_qty = min(tp1_qty, position["qty_remaining"])
+                            _apply_exit_leg(position, tp1_qty, position["tp1"], bar)
+                            position["tp1_hit"] = True
+                            if config.move_sl_to_be_after_tp1:
+                                position["stop_loss"] = position["entry_price"]
+                            if position["qty_remaining"] <= 1e-12:
+                                trades.append(_finalize_trade(position, "tp2"))
+                                state_kind = None
+                                position = None
                 else:
                     sl_hit, raw_exit = _check_sl(position, bar)
                     if sl_hit:
@@ -428,6 +460,7 @@ def _build_result(candles_15m, trades, equity_curve_raw, order_counts, config: S
     fill_rate_pct = (
         order_counts["filled"] / order_counts["placed"] * 100.0 if order_counts["placed"] else 0.0
     )
+    margin_capped_trades = sum(1 for t in trades if t["margin_capped"])
 
     return {
         "final_equity": round(_safe_float(final_equity, config.init_cash), 2),
@@ -448,5 +481,7 @@ def _build_result(candles_15m, trades, equity_curve_raw, order_counts, config: S
             "fill_rate_pct": round(_safe_float(fill_rate_pct), 2),
             "cancelled": dict(order_counts["cancelled"]),
             "ignored_in_position": order_counts["ignored_in_position"],
+            "duplicate_signals": order_counts["duplicate_signals"],
+            "margin_capped_trades": margin_capped_trades,
         },
     }
