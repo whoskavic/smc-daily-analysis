@@ -19,7 +19,8 @@ import pandas as pd
 import vectorbt as vbt
 
 from app.services import smc_engine
-from app.services.backtest import data_loader, smc_replay, signal_simulator
+from app.services.backtest import data_loader, smc_replay, signal_simulator, trade_simulator
+from app.services.backtest.trade_simulator import SimConfig
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +37,8 @@ def run_backtest(
     fees_pct: float = DEFAULT_FEES_PCT,
     slippage_pct: float = DEFAULT_SLIPPAGE_PCT,
     claude_sample_pct: float = 0.0,
+    sim_mode: str = "event",
+    sim_config: Optional[SimConfig] = None,
 ) -> Dict:
     """
     Full backtest run for one symbol over [since, until).
@@ -47,11 +50,21 @@ def run_backtest(
         fees_pct / slippage_pct: per-side, as a fraction (0.0004 = 4bps)
         claude_sample_pct: 0-1, fraction of qualifying bars to additionally
             cross-check against a real Claude API call (0 = disabled, default)
+        sim_mode: "event" (default) — event-driven trade_simulator, modeling
+            live's LIMIT entry + split TP1/TP2 + breakeven SL. "vbt_legacy" —
+            the original close-only vectorbt portfolio simulation, kept for
+            one release to compare against.
+        sim_config: SimConfig for sim_mode="event"; if omitted, one is built
+            from init_cash/fees_pct/slippage_pct plus settings.risk_per_trade_pct
+            and settings.max_leverage.
 
     Returns a dict with summary stats, trade list, equity curve, and (if
     sampled) a rule-vs-Claude decision comparison — see engine tests for the
     exact shape.
     """
+    if sim_mode not in ("event", "vbt_legacy"):
+        raise ValueError(f"sim_mode must be 'event' or 'vbt_legacy', got {sim_mode!r}")
+
     until = until or datetime.now(tz=since.tzinfo)
 
     candles_15m = data_loader.fetch_historical_ohlcv(symbol, "15m", since, until)
@@ -67,8 +80,13 @@ def run_backtest(
 
     signals: List[Dict] = []
     sampled: List[Dict] = []
+    bias_by_bar: Dict[int, str] = {}
 
     for snap in smc_replay.replay(candles_15m, candles_1h, candles_4h, candles_1d):
+        bias_by_bar[snap["bar_index"]] = signal_simulator.primary_bias(
+            snap["smc_levels"].get("confluence", {})
+        )
+
         if not smc_engine.has_structural_setup(snap["smc_levels"]):
             continue
 
@@ -83,9 +101,20 @@ def run_backtest(
         signals.append({"bar_index": snap["bar_index"], "timestamp": snap["timestamp"], **sig})
 
     if not signals:
-        return _empty_result(symbol, since, until, len(candles_15m), sampled)
+        empty_cfg = sim_config or (_default_sim_config(init_cash, fees_pct, slippage_pct) if sim_mode == "event" else None)
+        return _empty_result(symbol, since, until, len(candles_15m), sampled, sim_mode, empty_cfg)
 
-    stats = _simulate_portfolio(candles_15m, signals, init_cash, fees_pct, slippage_pct)
+    if sim_mode == "vbt_legacy":
+        stats = _simulate_portfolio(candles_15m, signals, init_cash, fees_pct, slippage_pct)
+        stats.setdefault("expectancy_r", 0.0)
+        stats.setdefault("avg_win_r", 0.0)
+        stats.setdefault("avg_loss_r", 0.0)
+        stats.setdefault("orders", None)
+    else:
+        cfg = sim_config or _default_sim_config(init_cash, fees_pct, slippage_pct)
+        stats = trade_simulator.simulate(candles_15m, signals, bias_by_bar, cfg)
+        sim_config = cfg
+
     stats.update({
         "symbol": symbol,
         "since": since.isoformat(),
@@ -93,8 +122,41 @@ def run_backtest(
         "bars_analyzed": len(candles_15m),
         "signals_generated": len(signals),
         "claude_sample": sampled,
+        "sim_mode": sim_mode,
+        "sim_config": _sim_config_as_dict(sim_config) if sim_mode == "event" else None,
     })
     return stats
+
+
+def _default_sim_config(init_cash: float, fees_pct: float, slippage_pct: float) -> SimConfig:
+    from app.config import settings
+    return SimConfig(
+        init_cash=init_cash,
+        fees_pct=fees_pct,
+        slippage_pct=slippage_pct,
+        risk_pct=getattr(settings, "risk_per_trade_pct", 1.0),
+        leverage=getattr(settings, "max_leverage", 10),
+    )
+
+
+def _sim_config_as_dict(cfg: Optional[SimConfig]) -> Optional[Dict]:
+    if cfg is None:
+        return None
+    return {
+        "init_cash": cfg.init_cash,
+        "fees_pct": cfg.fees_pct,
+        "slippage_pct": cfg.slippage_pct,
+        "order_ttl_bars": cfg.order_ttl_bars,
+        "cancel_on_tp1_before_fill": cfg.cancel_on_tp1_before_fill,
+        "cancel_on_bias_flip": cfg.cancel_on_bias_flip,
+        "tp1_fraction": cfg.tp1_fraction,
+        "move_sl_to_be_after_tp1": cfg.move_sl_to_be_after_tp1,
+        "sizing_mode": cfg.sizing_mode,
+        "risk_pct": cfg.risk_pct,
+        "fixed_risk_usdt": cfg.fixed_risk_usdt,
+        "fixed_margin_usdt": cfg.fixed_margin_usdt,
+        "leverage": cfg.leverage,
+    }
 
 
 def _run_claude_sample(symbol: str, snap: Dict, rule_sig: Dict) -> Dict:
@@ -216,12 +278,19 @@ def _simulate_portfolio(
     }
 
 
-def _empty_result(symbol: str, since: datetime, until: datetime, bars: int, sampled: List[Dict]) -> Dict:
+def _empty_result(
+    symbol: str, since: datetime, until: datetime, bars: int, sampled: List[Dict],
+    sim_mode: str = "event", sim_config: Optional[SimConfig] = None,
+) -> Dict:
     return {
         "symbol": symbol, "since": since.isoformat(), "until": until.isoformat(),
         "bars_analyzed": bars, "signals_generated": 0,
         "final_equity": None, "total_return_pct": 0.0, "win_rate_pct": 0.0,
         "sharpe_ratio": 0.0, "max_drawdown_pct": 0.0, "profit_factor": 0.0,
+        "expectancy_r": 0.0, "avg_win_r": 0.0, "avg_loss_r": 0.0,
         "total_trades": 0, "trades": [], "equity_curve": [], "claude_sample": sampled,
+        "orders": None,
+        "sim_mode": sim_mode,
+        "sim_config": _sim_config_as_dict(sim_config) if sim_mode == "event" else None,
         "note": "No qualifying structural setups found in this range.",
     }

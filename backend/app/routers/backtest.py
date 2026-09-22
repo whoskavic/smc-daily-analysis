@@ -5,16 +5,19 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from app.models.database import SessionLocal, BacktestRun
 from app.services.backtest.engine import run_backtest, DEFAULT_FEES_PCT, DEFAULT_SLIPPAGE_PCT
+from app.services.backtest.trade_simulator import SimConfig
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/backtest", tags=["backtest"])
+
+_DEFAULT_SIM = SimConfig()
 
 
 class BacktestRequest(BaseModel):
@@ -27,6 +30,15 @@ class BacktestRequest(BaseModel):
     claude_sample_pct: float = Field(0.0, ge=0.0, le=1.0)
     save: bool = True
 
+    # ── Phase 6: event-driven simulation options (all optional) ─────────────
+    sim_mode: Literal["event", "vbt_legacy"] = "event"
+    order_ttl_bars: int = Field(_DEFAULT_SIM.order_ttl_bars, gt=0)
+    sizing_mode: Literal["risk_pct", "fixed_risk_usdt", "fixed_margin_usdt"] = _DEFAULT_SIM.sizing_mode
+    risk_pct: float = Field(_DEFAULT_SIM.risk_pct, gt=0)
+    fixed_risk_usdt: float = Field(_DEFAULT_SIM.fixed_risk_usdt, gt=0)
+    fixed_margin_usdt: float = Field(_DEFAULT_SIM.fixed_margin_usdt, gt=0)
+    leverage: int = Field(_DEFAULT_SIM.leverage, gt=0)
+
 
 @router.post("/run")
 async def run_backtest_endpoint(req: BacktestRequest):
@@ -35,6 +47,20 @@ async def run_backtest_endpoint(req: BacktestRequest):
     until = req.until
     if until and not until.tzinfo:
         until = until.replace(tzinfo=timezone.utc)
+
+    sim_config = None
+    if req.sim_mode == "event":
+        sim_config = SimConfig(
+            init_cash=req.init_cash,
+            fees_pct=req.fees_pct,
+            slippage_pct=req.slippage_pct,
+            order_ttl_bars=req.order_ttl_bars,
+            sizing_mode=req.sizing_mode,
+            risk_pct=req.risk_pct,
+            fixed_risk_usdt=req.fixed_risk_usdt,
+            fixed_margin_usdt=req.fixed_margin_usdt,
+            leverage=req.leverage,
+        )
 
     try:
         result = run_backtest(
@@ -45,6 +71,8 @@ async def run_backtest_endpoint(req: BacktestRequest):
             fees_pct=req.fees_pct,
             slippage_pct=req.slippage_pct,
             claude_sample_pct=req.claude_sample_pct,
+            sim_mode=req.sim_mode,
+            sim_config=sim_config,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -126,6 +154,17 @@ async def get_backtest_run(run_id: int):
         db.close()
 
 
+def _sim_note(req: BacktestRequest, result: dict) -> Optional[str]:
+    """sim_mode/sizing_mode summary — BacktestRun has no dedicated columns for
+    these, so they ride in the existing `note` text column instead."""
+    if req.sim_mode == "event":
+        tag = f"sim_mode=event sizing_mode={req.sizing_mode}"
+    else:
+        tag = "sim_mode=vbt_legacy"
+    existing = result.get("note")
+    return f"{tag} | {existing}" if existing else tag
+
+
 def _save_run(req: BacktestRequest, result: dict) -> int:
     db = SessionLocal()
     try:
@@ -149,7 +188,7 @@ def _save_run(req: BacktestRequest, result: dict) -> int:
             trades=result.get("trades", []),
             equity_curve=result.get("equity_curve", []),
             claude_sample=result.get("claude_sample", []),
-            note=result.get("note"),
+            note=_sim_note(req, result),
         )
         db.add(row)
         db.commit()

@@ -21,6 +21,20 @@ MIN_CONFIDENCE = 85
 MIN_RR = 3.0
 SL_BUFFER_PCT = 0.15  # extra room beyond the OB/FVG edge, as a fraction of zone size
 
+_BIAS_TF_PRIORITY = ("structure_1D", "structure_4H", "structure_1H", "structure_15m")
+
+
+def primary_bias(confluence: Dict) -> str:
+    """Highest-timeframe non-neutral structural bias — "bullish" | "bearish" |
+    "neutral". Same priority order rule_based_signal() uses to pick a trade
+    direction; shared with engine.py so per-bar bias tracking (for the event
+    simulator's bias-flip cancellation) matches the signal logic exactly."""
+    factors = confluence.get("factors", {})
+    for tf in _BIAS_TF_PRIORITY:
+        if factors.get(tf) not in (None, "neutral"):
+            return factors[tf]
+    return "neutral"
+
 
 def _nearest_zone(key_levels: List[Dict], price: float, direction: str) -> Optional[Dict]:
     """Closest OB/FVG in the trade's direction — support below price for LONG,
@@ -79,21 +93,16 @@ def rule_based_signal(smc_levels: Dict, current_price: float) -> Dict:
     confluence = smc_levels.get("confluence", {})
     score = confluence.get("score", 0)
     conflicts = confluence.get("conflicts", [])
-    factors = confluence.get("factors", {})
 
-    primary_bias = "neutral"
-    for tf in ("structure_1D", "structure_4H", "structure_1H", "structure_15m"):
-        if factors.get(tf) not in (None, "neutral"):
-            primary_bias = factors[tf]
-            break
+    bias = primary_bias(confluence)
 
-    if primary_bias == "neutral" or score < MIN_CONFIDENCE:
+    if bias == "neutral" or score < MIN_CONFIDENCE:
         return _no_trade(score, "Confluence score/bias below TRADE threshold")
 
     if conflicts:
         return _no_trade(score, f"Confluence conflict present: {conflicts[0]}")
 
-    direction = "LONG" if primary_bias == "bullish" else "SHORT"
+    direction = "LONG" if bias == "bullish" else "SHORT"
     zone = _nearest_zone(key_levels, current_price, direction)
     if zone is None:
         return _no_trade(score, "No structural OB/FVG zone found in bias direction")

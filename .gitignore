@@ -23,3 +23,7 @@ frontend/.vite/
 .vscode/
 .idea/
 *.swp
+
+# Backtest reports (generated output — final decision reports are committed deliberately)
+backend/reports/*
+!backend/reports/README.md
