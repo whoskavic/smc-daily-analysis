@@ -514,11 +514,15 @@ async def execute_signal(
 
     if mode == "paper":
         from app.services.exchange.paper_wallet import (
-            paper_open_position, get_position_count, get_wallet_state, has_position
+            paper_open_position, paper_place_pending_order, get_position_count,
+            get_wallet_state, has_position, has_pending_order
         )
 
         if has_position(symbol):
             raise ValueError(f"[Paper] Already have an open position for {symbol}")
+
+        if has_pending_order(symbol):
+            raise ValueError(f"[Paper] Already have a pending order for {symbol}")
 
         if get_position_count() >= max_pos:
             raise ValueError(
@@ -546,18 +550,40 @@ async def execute_signal(
                 f"(notional=${sizing.margin_usdt * leverage:.2f} < min_notional=${meta.min_notional:.2f})"
             )
 
-        result = await paper_open_position(
-            symbol=symbol,
-            direction=direction,
-            usdt_amount=sizing.margin_usdt,
-            leverage=leverage,
-            entry_price=entry_price,
-            stop_loss=stop_loss,
-            tp1=tp1,
-            tp2=tp2,
-            tp1_pct=tp1_pct,
-            exchange_id=exchange_id,
-        )
+        if entry_price is None:
+            # MARKET signal — fills immediately, exactly as before.
+            result = await paper_open_position(
+                symbol=symbol,
+                direction=direction,
+                usdt_amount=sizing.margin_usdt,
+                leverage=leverage,
+                entry_price=entry_price,
+                stop_loss=stop_loss,
+                tp1=tp1,
+                tp2=tp2,
+                tp1_pct=tp1_pct,
+                exchange_id=exchange_id,
+            )
+            result["status"] = "open"
+        else:
+            # LIMIT signal — creates a pending order, not an instant fill.
+            # Sized on entry_price now; margin/quantity are never recomputed
+            # from the eventual fill price (see paper_wallet docstrings).
+            result = await paper_place_pending_order(
+                symbol=symbol,
+                direction=direction,
+                entry_price=entry_price,
+                stop_loss=stop_loss,
+                tp1=tp1,
+                tp2=tp2,
+                margin_usdt=sizing.margin_usdt,
+                quantity=sizing.quantity,
+                leverage=leverage,
+                tp1_pct=tp1_pct,
+                exchange_id=exchange_id,
+            )
+            result["status"] = "pending"
+
         result["mode"] = "paper"
         result["margin_capped"] = sizing.margin_capped
         return result

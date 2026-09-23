@@ -276,11 +276,50 @@ async def run_swarm_scan():
 # ─────────────────────────────────────────────────────────────────────────────
 
 async def update_paper_positions():
-    """Check current prices and trigger SL/TP1/TP2 for paper positions."""
+    """Advance pending LIMIT orders (fill/cancel), then check current
+    prices and trigger SL/TP1/TP2 for paper positions. Pending orders are
+    advanced first so a fill this tick only becomes eligible for its own
+    SL/TP checks starting next tick (see paper_update_pending_orders'
+    docstring) — both run on this job's existing 60s interval."""
     if not settings.is_paper_mode():
         return
 
-    from app.services.exchange.paper_wallet import paper_update_positions, get_position_count
+    from app.services.exchange.paper_wallet import (
+        paper_update_positions, paper_update_pending_orders,
+        get_position_count, get_pending_order_count,
+    )
+
+    if get_pending_order_count() > 0:
+        try:
+            order_events = await paper_update_pending_orders(exchange_id=settings.active_exchange)
+            for evt in order_events:
+                if evt["event"] == "filled":
+                    pos = evt["position"]
+                    logger.info(
+                        f"[Paper] Order filled: {evt['symbol']} {evt['direction']} "
+                        f"@ {pos['entry_price']:.4f}"
+                    )
+                    ws_manager.broadcast_nowait("trade_update", {
+                        "event": "order_filled",
+                        "symbol": evt["symbol"],
+                        "direction": evt["direction"],
+                        "entry_price": pos["entry_price"],
+                        "mode": "paper",
+                    })
+                else:
+                    logger.info(
+                        f"[Paper] Order cancelled: {evt['symbol']} {evt['direction']} "
+                        f"reason={evt['reason']}"
+                    )
+                    ws_manager.broadcast_nowait("trade_update", {
+                        "event": "order_cancelled",
+                        "symbol": evt["symbol"],
+                        "direction": evt["direction"],
+                        "reason": evt["reason"],
+                        "mode": "paper",
+                    })
+        except Exception as e:
+            logger.error(f"[Paper] Pending order update error: {e}", exc_info=True)
 
     if get_position_count() == 0:
         return
@@ -368,7 +407,7 @@ def _save_trade_record(db, analysis_record, execution: dict, trade_result: dict)
             entry_order_id=str(trade_result.get("entry_order_id") or trade_result.get("trade_id", "")),
             sl_order_id=str(trade_result.get("sl_order_id", "")),
             tp_order_id=str(trade_result.get("tp1_order_id", "")),
-            status="open",
+            status=trade_result.get("status", "open"),
             analysis_id=analysis_record.id,
             notes=(
                 f"mode={trade_result.get('mode', 'paper')} | "

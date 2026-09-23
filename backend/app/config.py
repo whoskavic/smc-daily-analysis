@@ -54,6 +54,10 @@ class Settings(BaseSettings):
     max_daily_drawdown_pct: float = Field(5.0, env="MAX_DAILY_DRAWDOWN_PCT")  # auto-pause threshold
     max_leverage: int = Field(10, env="MAX_LEVERAGE")
     paper_starting_balance: float = Field(1000.0, env="PAPER_STARTING_BALANCE")  # virtual USDT
+    # Pending LIMIT order lifetime in paper mode, in minutes (wall-clock,
+    # since paper runs on real time, not bars). Mirrors trade_simulator's
+    # order_ttl_bars=16 15m bars = 4 hours = 240 minutes.
+    paper_order_ttl_minutes: int = Field(240, env="PAPER_ORDER_TTL_MINUTES")
 
     # ── Swarm Settings ────────────────────────────────────────────────────────
     swarm_enabled: bool = Field(True, env="SWARM_ENABLED")

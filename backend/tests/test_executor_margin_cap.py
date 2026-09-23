@@ -151,14 +151,19 @@ class TestCalculatePositionSize(unittest.TestCase):
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestPaperPathMarginCap(unittest.TestCase):
+    # entry_price is set in _base_signal (LIMIT signal), so since the
+    # pending-orders PR the paper branch calls paper_place_pending_order,
+    # not paper_open_position, for these signals — mock/assert accordingly.
+
     def test_capped_result_is_recorded_and_wallet_gets_full_available_balance(self):
-        mock_open = AsyncMock(return_value={"trade_id": "abc123", "size": 100.0})
+        mock_place = AsyncMock(return_value={"order_id": "abc123", "status": "pending"})
 
         with patch("app.services.exchange.paper_wallet.has_position", return_value=False), \
+             patch("app.services.exchange.paper_wallet.has_pending_order", return_value=False), \
              patch("app.services.exchange.paper_wallet.get_position_count", return_value=0), \
              patch("app.services.exchange.paper_wallet.get_wallet_state",
                    return_value={"available_usdt": 1000.0}), \
-             patch("app.services.exchange.paper_wallet.paper_open_position", mock_open), \
+             patch("app.services.exchange.paper_wallet.paper_place_pending_order", mock_place), \
              patch("app.services.exchange.factory.get_meta", return_value=_fake_meta(1.0)), \
              patch.object(executor, "_get_trade_mode", return_value="paper"), \
              patch.object(executor, "_get_risk_pct", return_value=1.0):  # 100% risk -> forces a cap
@@ -167,18 +172,19 @@ class TestPaperPathMarginCap(unittest.TestCase):
 
         self.assertEqual(result["mode"], "paper")
         self.assertTrue(result["margin_capped"])
-        mock_open.assert_awaited_once()
-        _, kwargs = mock_open.call_args
-        self.assertAlmostEqual(kwargs["usdt_amount"], 1000.0)  # capped to the full available balance
+        mock_place.assert_awaited_once()
+        _, kwargs = mock_place.call_args
+        self.assertAlmostEqual(kwargs["margin_usdt"], 1000.0)  # capped to the full available balance
 
     def test_below_minimum_raises_instead_of_opening_a_position(self):
-        mock_open = AsyncMock()
+        mock_place = AsyncMock()
 
         with patch("app.services.exchange.paper_wallet.has_position", return_value=False), \
+             patch("app.services.exchange.paper_wallet.has_pending_order", return_value=False), \
              patch("app.services.exchange.paper_wallet.get_position_count", return_value=0), \
              patch("app.services.exchange.paper_wallet.get_wallet_state",
                    return_value={"available_usdt": 0.5}), \
-             patch("app.services.exchange.paper_wallet.paper_open_position", mock_open), \
+             patch("app.services.exchange.paper_wallet.paper_place_pending_order", mock_place), \
              patch("app.services.exchange.factory.get_meta", return_value=_fake_meta(1.0)), \
              patch.object(executor, "_get_trade_mode", return_value="paper"), \
              patch.object(executor, "_get_risk_pct", return_value=1.0):
@@ -186,16 +192,17 @@ class TestPaperPathMarginCap(unittest.TestCase):
             with self.assertRaises(ValueError):
                 asyncio.run(executor.execute_signal(signal, "bybit"))
 
-        mock_open.assert_not_awaited()
+        mock_place.assert_not_awaited()
 
     def test_normal_case_margin_unchanged_no_cap(self):
-        mock_open = AsyncMock(return_value={"trade_id": "xyz789", "size": 10.0})
+        mock_place = AsyncMock(return_value={"order_id": "xyz789", "status": "pending"})
 
         with patch("app.services.exchange.paper_wallet.has_position", return_value=False), \
+             patch("app.services.exchange.paper_wallet.has_pending_order", return_value=False), \
              patch("app.services.exchange.paper_wallet.get_position_count", return_value=0), \
              patch("app.services.exchange.paper_wallet.get_wallet_state",
                    return_value={"available_usdt": 1000.0}), \
-             patch("app.services.exchange.paper_wallet.paper_open_position", mock_open), \
+             patch("app.services.exchange.paper_wallet.paper_place_pending_order", mock_place), \
              patch("app.services.exchange.factory.get_meta", return_value=_fake_meta(1.0)), \
              patch.object(executor, "_get_trade_mode", return_value="paper"), \
              patch.object(executor, "_get_risk_pct", return_value=0.01):
@@ -203,8 +210,8 @@ class TestPaperPathMarginCap(unittest.TestCase):
             result = asyncio.run(executor.execute_signal(signal, "bybit"))
 
         self.assertFalse(result["margin_capped"])
-        _, kwargs = mock_open.call_args
-        self.assertAlmostEqual(kwargs["usdt_amount"], 100.0)
+        _, kwargs = mock_place.call_args
+        self.assertAlmostEqual(kwargs["margin_usdt"], 100.0)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
