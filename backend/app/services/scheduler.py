@@ -276,11 +276,52 @@ async def run_swarm_scan():
 # ─────────────────────────────────────────────────────────────────────────────
 
 async def update_paper_positions():
-    """Check current prices and trigger SL/TP1/TP2 for paper positions."""
+    """Advance pending LIMIT orders (fill/cancel), then check current
+    prices and trigger SL/TP1/TP2 for paper positions. Pending orders are
+    advanced first so a fill this tick only becomes eligible for its own
+    SL/TP checks starting next tick (see paper_update_pending_orders'
+    docstring) — both run on this job's existing 60s interval."""
     if not settings.is_paper_mode():
         return
 
-    from app.services.exchange.paper_wallet import paper_update_positions, get_position_count
+    from app.services.exchange.paper_wallet import (
+        paper_update_positions, paper_update_pending_orders,
+        get_position_count, get_pending_order_count,
+    )
+
+    if get_pending_order_count() > 0:
+        try:
+            order_events = await paper_update_pending_orders(exchange_id=settings.active_exchange)
+            for evt in order_events:
+                if evt["event"] == "filled":
+                    pos = evt["position"]
+                    logger.info(
+                        f"[Paper] Order filled: {evt['symbol']} {evt['direction']} "
+                        f"@ {pos['entry_price']:.4f}"
+                    )
+                    _update_trade_record_on_fill(evt["order_id"], pos)
+                    ws_manager.broadcast_nowait("trade_update", {
+                        "event": "order_filled",
+                        "symbol": evt["symbol"],
+                        "direction": evt["direction"],
+                        "entry_price": pos["entry_price"],
+                        "mode": "paper",
+                    })
+                else:
+                    logger.info(
+                        f"[Paper] Order cancelled: {evt['symbol']} {evt['direction']} "
+                        f"reason={evt['reason']}"
+                    )
+                    _update_trade_record_on_cancel(evt["order_id"], evt["reason"])
+                    ws_manager.broadcast_nowait("trade_update", {
+                        "event": "order_cancelled",
+                        "symbol": evt["symbol"],
+                        "direction": evt["direction"],
+                        "reason": evt["reason"],
+                        "mode": "paper",
+                    })
+        except Exception as e:
+            logger.error(f"[Paper] Pending order update error: {e}", exc_info=True)
 
     if get_position_count() == 0:
         return
@@ -365,10 +406,18 @@ def _save_trade_record(db, analysis_record, execution: dict, trade_result: dict)
             take_profit=execution.get("tp1"),
             leverage=execution.get("recommended_leverage", 5),
             usdt_amount=trade_result.get("margin_usdt", 0),
-            entry_order_id=str(trade_result.get("entry_order_id") or trade_result.get("trade_id", "")),
+            # For a paper pending order, trade_result is the order dict
+            # (no entry_order_id/trade_id yet) — fall back to order_id so
+            # _update_trade_record_on_fill/_on_cancel can find this row
+            # later by entry_order_id (frozen schema, no dedicated column).
+            entry_order_id=str(
+                trade_result.get("entry_order_id")
+                or trade_result.get("order_id")
+                or trade_result.get("trade_id", "")
+            ),
             sl_order_id=str(trade_result.get("sl_order_id", "")),
             tp_order_id=str(trade_result.get("tp1_order_id", "")),
-            status="open",
+            status=trade_result.get("status", "open"),
             analysis_id=analysis_record.id,
             notes=(
                 f"mode={trade_result.get('mode', 'paper')} | "
@@ -383,6 +432,57 @@ def _save_trade_record(db, analysis_record, execution: dict, trade_result: dict)
         logger.debug(f"[Scheduler] Trade record saved: {trade.symbol} id={trade.id}")
     except Exception as e:
         logger.error(f"[Scheduler] Failed to save trade record: {e}")
+
+
+def _update_trade_record_on_fill(order_id: str, position: dict) -> None:
+    """
+    Update the TradeHistory row for a pending order that just filled —
+    looked up by entry_order_id, which _save_trade_record sets to the
+    paper order_id at placement time (no dedicated column: the schema is
+    frozen). Not every pending order has a row (only auto-executed daily-
+    analysis signals call _save_trade_record today) — a missing row just
+    logs and returns. A DB failure here must never abort pending-order
+    processing, so it's caught and logged, not raised.
+    """
+    db = SessionLocal()
+    try:
+        trade = db.query(TradeHistory).filter_by(entry_order_id=str(order_id)).first()
+        if not trade:
+            logger.debug(f"[Paper] No TradeHistory row for filled order_id={order_id} (not tracked)")
+            return
+        trade.status = "open"
+        trade.entry_price = position["entry_price"]
+        trade.notes = f"{trade.notes or ''} | filled_at={position['fill_time']}"
+        db.commit()
+    except Exception as e:
+        logger.error(f"[Paper] Failed to update trade record for filled order {order_id}: {e}")
+    finally:
+        db.close()
+
+
+def _update_trade_record_on_cancel(order_id: str, reason: str) -> None:
+    """
+    Update the TradeHistory row for a pending order that was cancelled —
+    same lookup as _update_trade_record_on_fill. pnl is set to 0.0 (never
+    left NULL): trading_service.sync_open_trades treats
+    status=='cancelled' AND pnl IS NULL as an unresolved live
+    mis-classification to re-check against Binance, and a paper
+    cancellation must not be picked up by that query.
+    """
+    db = SessionLocal()
+    try:
+        trade = db.query(TradeHistory).filter_by(entry_order_id=str(order_id)).first()
+        if not trade:
+            logger.debug(f"[Paper] No TradeHistory row for cancelled order_id={order_id} (not tracked)")
+            return
+        trade.status = "cancelled"
+        trade.pnl = 0.0
+        trade.notes = f"{trade.notes or ''} | cancelled: reason={reason}"
+        db.commit()
+    except Exception as e:
+        logger.error(f"[Paper] Failed to update trade record for cancelled order {order_id}: {e}")
+    finally:
+        db.close()
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -4,8 +4,19 @@ Paper Trading Wallet — realistic trade simulation with virtual USDT balance.
 Design:
 - State persisted to SQLite (survives server restarts)
 - Fill simulation uses real bid/ask spread from exchange
-- Tracks open positions, P&L, and closed trades
+- Tracks pending orders, open positions, P&L, and closed trades
 - Thread/async-safe via simple locking
+
+Pending orders: a LIMIT signal (entry_price given) no longer fills
+instantly — it creates a PENDING order (see paper_place_pending_order),
+matching trade_simulator.py's event-driven fill/cancellation rules (the
+validated backtest reference spec) instead of assuming a 100% fill rate at
+the requested price. available_usdt is untouched while an order is
+pending — margin is reserved only when it actually fills (see
+_open_position_from_fill) — so a symbol with a pending order still shows
+its full balance as available until (if) that order fills. A MARKET
+signal (entry_price is None) is unaffected: it still fills immediately at
+mark price via paper_open_position, exactly as before.
 """
 from __future__ import annotations
 
@@ -35,8 +46,24 @@ _wallet: dict = {
 # symbol → position dict
 _positions: dict[str, dict] = {}
 
+# order_id → pending LIMIT order dict — never reserves margin (see module
+# docstring); margin is committed only in _open_position_from_fill.
+_pending_orders: dict[str, dict] = {}
+
 # list of closed trades
 _closed_trades: list[dict] = []
+
+
+def _get_order_ttl_minutes() -> int:
+    """Pending-order TTL in minutes — mirrors trade_simulator's
+    order_ttl_bars=16 (15m bars = 4h), expressed in wall-clock minutes
+    since paper runs on real time, not bars. See config.py's
+    PAPER_ORDER_TTL_MINUTES (default 240 = 16 * 15m)."""
+    try:
+        from app.config import settings
+        return int(getattr(settings, "paper_order_ttl_minutes", 240))
+    except Exception:
+        return 240
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -154,6 +181,254 @@ async def paper_open_position(
             f"R:R={rr_tp1}/{rr_tp2} | Margin=${usdt_amount:.2f} Lev={leverage}x"
         )
         return position
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Pending LIMIT orders — mirrors trade_simulator.py's fill/cancellation
+# rules (the validated backtest reference spec), adapted for paper's
+# single polled mark price (no OHLC bar — see _try_limit_fill/_reached_tp1).
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _try_limit_fill(order: dict, price: float) -> Optional[float]:
+    """Mirrors trade_simulator._try_limit_fill's trigger condition exactly:
+    LONG fills when price <= entry, SHORT fills when price >= entry.
+    trade_simulator additionally picks min(bar_open, entry) / max(bar_open,
+    entry) as the fill price to handle a bar that gapped past the level —
+    paper has no OHLC bar, only the single polled mark price, and that
+    price already satisfies the trigger condition (already <= entry for
+    LONG, or >= entry for SHORT), so min/max collapses to just the
+    observed price. That's the deliberate adaptation: same direction of
+    rule, no separate gap-to-open case because there's no "open" to gap
+    from — only the point sample this poll observed."""
+    entry = order["entry_price"]
+    if order["direction"] == "LONG":
+        if price <= entry:
+            return price
+    else:
+        if price >= entry:
+            return price
+    return None
+
+
+def _reached_tp1(order: dict, price: float) -> bool:
+    """Mirrors trade_simulator._reached_tp1, single-price adaptation."""
+    if order["direction"] == "LONG":
+        return price >= order["tp1"]
+    return price <= order["tp1"]
+
+
+async def paper_place_pending_order(
+    symbol: str,
+    direction: str,
+    entry_price: float,
+    stop_loss: float,
+    tp1: float,
+    tp2: float,
+    margin_usdt: float,
+    quantity: float,
+    leverage: int,
+    tp1_pct: float = 0.50,
+    exchange_id: str = "binance",
+) -> dict:
+    """
+    Create a PENDING LIMIT order. Reserves nothing on the wallet —
+    available_usdt is untouched until the order actually fills (see module
+    docstring and _open_position_from_fill).
+
+    margin_usdt/quantity are the CALLER's pre-computed sizing (executor.py's
+    calculate_position_size, run against entry_price) — mirrors
+    trade_simulator's _open_position, which sizes on the ORDER price, not
+    the eventual fill price: a gap fill must not silently change position
+    size. Both are stored as-is and never recomputed from the fill price.
+    """
+    async with _lock:
+        order_id = str(uuid.uuid4())[:8]
+        order = {
+            "order_id": order_id,
+            "symbol": symbol,
+            "direction": direction,
+            "entry_price": entry_price,
+            "stop_loss": stop_loss,
+            "tp1": tp1,
+            "tp2": tp2,
+            "tp1_pct": tp1_pct,
+            "leverage": leverage,
+            "margin_usdt": margin_usdt,
+            "quantity": quantity,
+            "exchange_id": exchange_id,
+            "created_at": datetime.now(timezone.utc),
+            "status": "pending",
+        }
+        _pending_orders[order_id] = order
+
+        logger.info(
+            f"[PaperWallet] PENDING {direction} {symbol} "
+            f"@ {entry_price:.4f} | SL={stop_loss:.4f} TP1={tp1:.4f} TP2={tp2:.4f} "
+            f"Margin=${margin_usdt:.2f} (reserved on fill, not now) Lev={leverage}x"
+        )
+
+        return {**order, "created_at": order["created_at"].isoformat()}
+
+
+def _open_position_from_fill(order: dict, fill_price: float) -> dict:
+    """
+    Turn a filled pending order into a position record — same shape as
+    paper_open_position's, plus order_id/order_created_at/fill_time so both
+    the order's creation time and its fill time are recorded. Commits
+    margin to the wallet HERE (fill time), not at order placement. Must be
+    called with _lock already held (see paper_update_pending_orders).
+    """
+    direction = order["direction"]
+    quantity = order["quantity"]
+    stop_loss = order["stop_loss"]
+    tp1 = order["tp1"]
+    tp2 = order["tp2"]
+    tp1_pct = order["tp1_pct"]
+    margin_usdt = order["margin_usdt"]
+    leverage = order["leverage"]
+
+    if direction == "LONG":
+        sl_dist = fill_price - stop_loss
+        tp1_dist = tp1 - fill_price
+        tp2_dist = tp2 - fill_price
+    else:
+        sl_dist = stop_loss - fill_price
+        tp1_dist = fill_price - tp1
+        tp2_dist = fill_price - tp2
+
+    rr_tp1 = round(tp1_dist / sl_dist, 2) if sl_dist > 0 else 0
+    rr_tp2 = round(tp2_dist / sl_dist, 2) if sl_dist > 0 else 0
+
+    _wallet["available_usdt"] -= margin_usdt  # margin committed on fill, not placement
+
+    trade_id = str(uuid.uuid4())[:8]
+    now_iso = datetime.now(timezone.utc).isoformat()
+    position = {
+        "trade_id": trade_id,
+        "symbol": order["symbol"],
+        "direction": direction,
+        "order_type": "LIMIT",
+        "size": round(quantity, 6),
+        "entry_price": round(fill_price, 6),
+        "stop_loss": stop_loss,
+        "tp1": tp1,
+        "tp2": tp2,
+        "tp1_pct": tp1_pct,
+        "tp2_pct": 1.0 - tp1_pct,
+        "tp1_hit": False,
+        "tp2_hit": False,
+        "leverage": leverage,
+        "margin_usdt": margin_usdt,
+        "notional_usdt": round(margin_usdt * leverage, 6),
+        "rr_tp1": rr_tp1,
+        "rr_tp2": rr_tp2,
+        "unrealized_pnl": 0.0,
+        "realized_pnl": 0.0,
+        "status": "open",
+        "opened_at": now_iso,
+        "exchange_id": order["exchange_id"],
+        "order_id": order["order_id"],
+        "order_created_at": order["created_at"].isoformat(),
+        "fill_time": now_iso,
+    }
+
+    _positions[trade_id] = position
+    _wallet["trade_count"] += 1
+
+    logger.info(
+        f"[PaperWallet] FILLED {direction} {order['symbol']} "
+        f"@ {fill_price:.4f} | SL={stop_loss:.4f} TP1={tp1:.4f} TP2={tp2:.4f} "
+        f"R:R={rr_tp1}/{rr_tp2} | Margin=${margin_usdt:.2f} Lev={leverage}x"
+    )
+    return position
+
+
+async def paper_update_pending_orders(exchange_id: str = "binance") -> list[dict]:
+    """
+    Check the current mark price for every pending order: fill if price
+    has traded through entry, cancel if TP1 is reached before fill or the
+    order has aged past its TTL (see _get_order_ttl_minutes). Must be
+    called before paper_update_positions in the same tick (see
+    scheduler.update_paper_positions) so a fill this tick only becomes
+    eligible for its own SL/TP checks starting the NEXT tick — mirroring
+    trade_simulator's one-event-per-bar, no-same-bar-fill semantics.
+
+    bias_flip cancellation (trade_simulator's third cancellation rule) is
+    NOT implemented here — see module docstring / PR report for why.
+
+    Returns a list of event dicts: {"event": "filled", "order_id",
+    "symbol", "direction", "position"} or {"event": "cancelled",
+    "order_id", "symbol", "direction", "reason": "tp1_before_fill"|"ttl"}.
+    """
+    events: list[dict] = []
+
+    async with _lock:
+        if not _pending_orders:
+            return []
+        symbols = list({o["symbol"] for o in _pending_orders.values()})
+
+    prices: dict[str, float] = {}
+    from app.services.exchange.factory import create_exchange
+    try:
+        async with create_exchange(exchange_id) as client:
+            for sym in symbols:
+                try:
+                    ticker = await client.exchange.fetch_ticker(sym)
+                    prices[sym] = float(ticker.get("last") or ticker.get("mark", 0))
+                except Exception as e:
+                    logger.warning(f"[PaperWallet] Price fetch failed for {sym}: {e}")
+    except Exception as e:
+        logger.error(f"[PaperWallet] Exchange connection failed: {e}")
+        return []
+
+    ttl_minutes = _get_order_ttl_minutes()
+    now = datetime.now(timezone.utc)
+
+    async with _lock:
+        for order_id, order in list(_pending_orders.items()):
+            price = prices.get(order["symbol"])
+            if not price:
+                continue
+
+            fill_price = _try_limit_fill(order, price)
+            if fill_price is not None:
+                position = _open_position_from_fill(order, fill_price)
+                del _pending_orders[order_id]
+                events.append({
+                    "event": "filled", "order_id": order_id,
+                    "symbol": order["symbol"], "direction": order["direction"],
+                    "position": position,
+                })
+                continue
+
+            if _reached_tp1(order, price):
+                del _pending_orders[order_id]
+                logger.info(
+                    f"[PaperWallet] Pending order cancelled (tp1_before_fill): "
+                    f"{order['symbol']} {order['direction']} entry={order['entry_price']:.4f}"
+                )
+                events.append({
+                    "event": "cancelled", "order_id": order_id,
+                    "symbol": order["symbol"], "direction": order["direction"],
+                    "reason": "tp1_before_fill",
+                })
+                continue
+
+            age_minutes = (now - order["created_at"]).total_seconds() / 60.0
+            if age_minutes >= ttl_minutes:
+                del _pending_orders[order_id]
+                logger.info(
+                    f"[PaperWallet] Pending order cancelled (ttl): "
+                    f"{order['symbol']} {order['direction']} entry={order['entry_price']:.4f} "
+                    f"age={age_minutes:.1f}min"
+                )
+                events.append({
+                    "event": "cancelled", "order_id": order_id,
+                    "symbol": order["symbol"], "direction": order["direction"],
+                    "reason": "ttl",
+                })
+
+    return events
 
 
 async def paper_update_positions(exchange_id: str = "binance") -> list[dict]:
@@ -345,11 +620,27 @@ def get_position_count() -> int:
     return sum(1 for p in _positions.values() if p["status"] == "open")
 
 
+def get_pending_orders() -> list[dict]:
+    """Pending LIMIT orders — kept separate from get_open_positions() rather
+    than mixed in, since a pending order is not yet a position (no margin
+    committed, no size/PnL yet)."""
+    return [{**o, "created_at": o["created_at"].isoformat()} for o in _pending_orders.values()]
+
+
+def has_pending_order(symbol: str) -> bool:
+    return any(o["symbol"] == symbol for o in _pending_orders.values())
+
+
+def get_pending_order_count() -> int:
+    return len(_pending_orders)
+
+
 def reset_wallet(starting_balance: float = 1000.0) -> None:
     """Reset paper wallet to initial state (for testing)."""
-    global _positions, _closed_trades
+    global _positions, _closed_trades, _pending_orders
     _positions = {}
     _closed_trades = []
+    _pending_orders = {}
     _wallet.update({
         "balance_usdt": starting_balance,
         "available_usdt": starting_balance,
