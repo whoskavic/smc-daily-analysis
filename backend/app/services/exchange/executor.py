@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
+from dataclasses import dataclass
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -56,6 +57,27 @@ def _get_risk_pct() -> float:
 # Position sizing
 # ─────────────────────────────────────────────────────────────────────────────
 
+@dataclass(frozen=True)
+class PositionSizeResult:
+    """
+    margin_usdt / quantity: the sized position (already capped/floored —
+        always safe to use directly).
+    margin_capped: True if the risk-based margin exceeded balance_usdt and
+        was reduced to fit — a signal the stop is unusually tight relative
+        to account size. Never silent: always check this, don't just
+        compare quantity to what you expected.
+    below_minimum: True if, even after any cap, the resulting notional
+        (margin_usdt * leverage) is still below the exchange's minimum
+        order size — margin_usdt/quantity are the (unfillable) sized
+        values for logging only; the caller must refuse the trade rather
+        than submit them.
+    """
+    margin_usdt: float
+    quantity: float
+    margin_capped: bool
+    below_minimum: bool
+
+
 def calculate_position_size(
     balance_usdt: float,
     entry_price: float,
@@ -63,32 +85,66 @@ def calculate_position_size(
     risk_pct: float,
     leverage: int,
     min_notional: float = 1.0,
-) -> tuple[float, float]:
+) -> PositionSizeResult:
     """
-    Risk-based position sizing.
+    Risk-based position sizing, capped at available balance.
 
     risk_usdt = balance * risk_pct
     stop_distance_pct = abs(entry - sl) / entry
     margin_required = risk_usdt / (stop_distance_pct * leverage)
 
-    Returns: (margin_usdt, quantity)
+    Mirrors trade_simulator._size_position()'s cap-at-equity semantics
+    exactly (app/services/backtest/trade_simulator.py): if margin_required
+    exceeds balance_usdt, margin is capped to balance_usdt
+    (margin_capped=True) and quantity is recomputed from the capped
+    margin — instead of silently sizing a position the account can't fund
+    (previously: no cap at all, so a tight stop could size a margin many
+    times the account balance).
+
+    Deliberate difference from the backtest: the backtest has no minimum-
+    order-size floor (it never submits a real order), but a real exchange
+    rejects an order below its minimum notional. So this also checks
+    min_notional (see factory.EXCHANGE_META — a per-exchange constant, not
+    a live exchange call) and sets below_minimum=True when the resulting
+    notional (after any cap) still doesn't meet it — replacing the old
+    behavior of silently inflating margin up to the minimum, which could
+    push margin back above balance_usdt and undo the cap.
+
+    Returns a PositionSizeResult. Never raises.
     """
     risk_usdt = balance_usdt * risk_pct
     sl_dist = abs(entry_price - stop_loss)
     sl_dist_pct = sl_dist / entry_price if entry_price > 0 else 0.01
-
-    if sl_dist_pct == 0:
+    if sl_dist_pct <= 0:
         sl_dist_pct = 0.01  # 1% fallback
 
     # Margin needed to risk exactly risk_usdt
     margin = risk_usdt / (sl_dist_pct * leverage)
+    requested_quantity = (margin * leverage) / entry_price if entry_price > 0 else 0.0
 
-    # Ensure minimum notional is met
-    if margin * leverage < min_notional:
-        margin = min_notional / leverage
+    margin_capped = False
+    if margin > balance_usdt:
+        margin = balance_usdt
+        margin_capped = True
+    margin = max(margin, 0.0)
 
-    quantity = (margin * leverage) / entry_price
-    return round(margin, 4), round(quantity, 6)
+    quantity = (margin * leverage) / entry_price if entry_price > 0 else 0.0
+    notional = margin * leverage
+    below_minimum = notional < min_notional
+
+    if margin_capped:
+        logger.warning(
+            "[Executor] position margin capped at available balance "
+            f"(balance=${balance_usdt:.2f}): requested_qty={requested_quantity:.6f} "
+            f"-> capped_qty={quantity:.6f} (stop_distance={sl_dist_pct * 100:.4f}% of entry)"
+        )
+
+    return PositionSizeResult(
+        margin_usdt=round(margin, 4),
+        quantity=round(quantity, 6),
+        margin_capped=margin_capped,
+        below_minimum=below_minimum,
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -325,9 +381,21 @@ async def _live_execute(
             ticker = await client.exchange.fetch_ticker(symbol)
             ref_price = float(ticker.get("last", 0))
 
-    margin_usdt, size = calculate_position_size(
+    sizing = calculate_position_size(
         balance_usdt, ref_price, stop_loss, risk_pct, leverage, meta.min_notional
     )
+    if sizing.below_minimum:
+        logger.warning(
+            f"[Executor] {direction} {symbol} on {exchange_id}: sized position "
+            f"(margin=${sizing.margin_usdt:.2f}, notional=${sizing.margin_usdt * leverage:.2f}) "
+            f"is below {exchange_id}'s min_notional=${meta.min_notional:.2f} -- refusing trade"
+        )
+        raise ValueError(
+            f"Position size for {symbol} on {exchange_id} is below the exchange minimum "
+            f"(notional=${sizing.margin_usdt * leverage:.2f} < min_notional=${meta.min_notional:.2f})"
+        )
+
+    margin_usdt, size = sizing.margin_usdt, sizing.quantity
 
     tp1_size = round(size * tp1_pct, 6)
     tp2_size = round(size * (1 - tp1_pct), 6)
@@ -371,6 +439,7 @@ async def _live_execute(
         "leverage": leverage,
         "margin_usdt": margin_usdt,
         "notional_usdt": round(margin_usdt * leverage, 2),
+        "margin_capped": sizing.margin_capped,
         "entry_order_id": str(orders["entry"].get("id", "")),
         "sl_order_id": str(orders["sl"].get("id", "embedded")),
         "tp1_order_id": str(orders["tp1"].get("id", "embedded")),
@@ -459,17 +528,28 @@ async def execute_signal(
 
         wallet = get_wallet_state()
         avail = wallet["available_usdt"]
-        # Risk 1% of available balance
         risk_pct = _get_risk_pct()
-        sl_dist = abs((entry_price or 0) - stop_loss)
-        sl_pct = sl_dist / (entry_price or stop_loss) if (entry_price or stop_loss) else 0.02
-        margin = (avail * risk_pct) / (sl_pct * leverage) if sl_pct else avail * 0.05
-        margin = max(margin, 5.0)  # at least $5 for paper
+        ref_price = entry_price or stop_loss  # sizing reference when entry_price is None (MARKET)
+
+        from app.services.exchange.factory import get_meta
+        meta = get_meta(exchange_id)
+        sizing = calculate_position_size(avail, ref_price, stop_loss, risk_pct, leverage, meta.min_notional)
+
+        if sizing.below_minimum:
+            logger.warning(
+                f"[Paper] {direction} {symbol}: sized position "
+                f"(margin=${sizing.margin_usdt:.2f}, notional=${sizing.margin_usdt * leverage:.2f}) "
+                f"is below {exchange_id}'s min_notional=${meta.min_notional:.2f} -- refusing trade"
+            )
+            raise ValueError(
+                f"[Paper] Position size for {symbol} on {exchange_id} is below the exchange minimum "
+                f"(notional=${sizing.margin_usdt * leverage:.2f} < min_notional=${meta.min_notional:.2f})"
+            )
 
         result = await paper_open_position(
             symbol=symbol,
             direction=direction,
-            usdt_amount=round(margin, 2),
+            usdt_amount=sizing.margin_usdt,
             leverage=leverage,
             entry_price=entry_price,
             stop_loss=stop_loss,
@@ -479,6 +559,7 @@ async def execute_signal(
             exchange_id=exchange_id,
         )
         result["mode"] = "paper"
+        result["margin_capped"] = sizing.margin_capped
         return result
 
     else:  # live
