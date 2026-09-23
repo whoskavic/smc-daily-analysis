@@ -16,6 +16,10 @@ class Settings(BaseSettings):
     # ── Anthropic ─────────────────────────────────────────────────────────────
     anthropic_api_key: str = Field(..., env="ANTHROPIC_API_KEY")
     claude_model: str = Field("claude-sonnet-4-6", env="CLAUDE_MODEL")
+    # Thinking models (e.g. claude-sonnet-5) share this budget between
+    # extended thinking and the JSON reply — the SMC prompt/schema is large,
+    # so this needs headroom for both, not just the response text.
+    claude_max_tokens: int = Field(16000, env="CLAUDE_MAX_TOKENS")
 
     # ── Exchange Credentials ──────────────────────────────────────────────────
     # Binance (existing — keep backward-compatible)

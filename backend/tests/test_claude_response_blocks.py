@@ -34,8 +34,11 @@ if "app.config" not in sys.modules:
     settings_stub = MagicMock()
     settings_stub.anthropic_api_key = "sk-test-stub"
     settings_stub.claude_model = "claude-sonnet-5"
+    settings_stub.claude_max_tokens = 16000
     cfg_mod.settings = settings_stub
     sys.modules["app.config"] = cfg_mod
+
+_settings = sys.modules["app.config"].settings
 
 from app.services.claude_service import run_analysis, _extract_text_block  # noqa: E402
 
@@ -194,6 +197,26 @@ class TestRunAnalysisResponseBlocks(unittest.TestCase):
     def test_non_max_tokens_stop_reason_does_not_trigger_truncation_check(self):
         trade_json = json.dumps(_valid_trade_json())
         result = _run_with_message(_Message([_TextBlock(trade_json)], stop_reason="end_turn"))
+        self.assertEqual(result["execution"]["decision"], "TRADE")
+
+
+# ── settings.claude_max_tokens passthrough ───────────────────────────────────
+
+class TestClaudeMaxTokensSetting(unittest.TestCase):
+    def test_claude_max_tokens_setting_passed_through_to_create(self):
+        trade_json = json.dumps(_valid_trade_json())
+        captured_kwargs = {}
+
+        def fake_create(**kwargs):
+            captured_kwargs.update(kwargs)
+            return _Message([_TextBlock(trade_json)])
+
+        with patch.object(_settings, "claude_max_tokens", 12345), \
+             patch("app.services.claude_service._get_client") as mc:
+            mc.return_value.messages.create.side_effect = fake_create
+            result = run_analysis(_minimal_snapshot())
+
+        self.assertEqual(captured_kwargs.get("max_tokens"), 12345)
         self.assertEqual(result["execution"]["decision"], "TRADE")
 
 
