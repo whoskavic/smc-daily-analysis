@@ -24,6 +24,7 @@ import tempfile
 import types
 import unittest
 from datetime import datetime, timedelta, timezone
+from typing import Optional
 from unittest.mock import AsyncMock, MagicMock, patch
 
 BACKEND = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
@@ -56,7 +57,7 @@ _settings.paper_order_ttl_minutes = 240
 _settings.is_paper_mode = lambda: True
 _settings.is_live_mode = lambda: False
 
-from app.models.database import init_db  # noqa: E402
+from app.models.database import init_db, SessionLocal, TradeHistory  # noqa: E402
 from app.services.exchange import paper_wallet  # noqa: E402
 from app.services.exchange import executor  # noqa: E402
 from app.services import scheduler  # noqa: E402
@@ -385,6 +386,140 @@ class TestSchedulerWsBroadcast(PaperPendingOrdersTestBase):
         self.assertEqual(len(cancelled), 1)
         self.assertEqual(cancelled[0]["reason"], "tp1_before_fill")
         self.assertEqual(cancelled[0]["mode"], "paper")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 11. TradeHistory sync — a filled/cancelled pending order updates its DB row
+#     (found by entry_order_id, the paper order_id stored at placement)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _clear_trade_history():
+    db = SessionLocal()
+    try:
+        db.query(TradeHistory).delete()
+        db.commit()
+    finally:
+        db.close()
+
+
+def _make_pending_trade_row(order_id: str, symbol: str = "BTC/USDT") -> int:
+    """Mirrors what _save_trade_record writes for a pending paper order at
+    placement time: status='pending', entry_order_id=the paper order_id."""
+    db = SessionLocal()
+    try:
+        trade = TradeHistory(
+            symbol=symbol, direction="LONG", order_type="LIMIT", quantity=5.0,
+            entry_price=100.0, stop_loss=95.0, take_profit=110.0, leverage=10,
+            usdt_amount=50.0, entry_order_id=str(order_id), status="pending",
+            notes="mode=paper | exchange=binance | confidence=90% | tp2=120.0 | rr=2.0",
+        )
+        db.add(trade)
+        db.commit()
+        db.refresh(trade)
+        return trade.id
+    finally:
+        db.close()
+
+
+def _get_trade_row(trade_id: int) -> Optional[dict]:
+    db = SessionLocal()
+    try:
+        trade = db.query(TradeHistory).filter_by(id=trade_id).first()
+        if trade is None:
+            return None
+        return {
+            "status": trade.status, "entry_price": trade.entry_price,
+            "pnl": trade.pnl, "notes": trade.notes,
+        }
+    finally:
+        db.close()
+
+
+class TestTradeHistorySync(PaperPendingOrdersTestBase):
+    def setUp(self):
+        super().setUp()
+        _clear_trade_history()
+
+    def tearDown(self):
+        super().tearDown()
+        _clear_trade_history()
+
+    def test_fill_updates_row_to_open_with_fill_price(self):
+        order = asyncio.run(paper_wallet.paper_place_pending_order(**_order_kwargs()))
+        trade_id = _make_pending_trade_row(order["order_id"])
+
+        with patch.object(scheduler.settings, "is_paper_mode", return_value=True), \
+             patch.object(scheduler.ws_manager, "broadcast_nowait"), \
+             _patch_prices({"BTC/USDT": 99.0}):
+            asyncio.run(scheduler.update_paper_positions())
+
+        row = _get_trade_row(trade_id)
+        self.assertEqual(row["status"], "open")
+        self.assertEqual(row["entry_price"], 99.0)
+        self.assertIn("filled_at=", row["notes"])
+        self.assertIsNone(row["pnl"])
+
+    def test_ttl_cancel_updates_row_to_cancelled_with_pnl_zero_and_reason(self):
+        order = asyncio.run(paper_wallet.paper_place_pending_order(**_order_kwargs()))
+        trade_id = _make_pending_trade_row(order["order_id"])
+        paper_wallet._pending_orders[order["order_id"]]["created_at"] = (
+            datetime.now(timezone.utc) - timedelta(minutes=241)
+        )
+
+        with patch.object(scheduler.settings, "is_paper_mode", return_value=True), \
+             patch.object(scheduler.ws_manager, "broadcast_nowait"), \
+             _patch_prices({"BTC/USDT": 105.0}):  # neither fills nor hits TP1
+            asyncio.run(scheduler.update_paper_positions())
+
+        row = _get_trade_row(trade_id)
+        self.assertEqual(row["status"], "cancelled")
+        self.assertEqual(row["pnl"], 0.0)
+        self.assertIn("reason=ttl", row["notes"])
+
+    def test_tp1_before_fill_cancel_updates_row_to_cancelled_with_pnl_zero_and_reason(self):
+        order = asyncio.run(paper_wallet.paper_place_pending_order(**_order_kwargs(entry_price=90.0)))
+        trade_id = _make_pending_trade_row(order["order_id"])
+
+        with patch.object(scheduler.settings, "is_paper_mode", return_value=True), \
+             patch.object(scheduler.ws_manager, "broadcast_nowait"), \
+             _patch_prices({"BTC/USDT": 115.0}):  # >= tp1(110), not <= entry(90)
+            asyncio.run(scheduler.update_paper_positions())
+
+        row = _get_trade_row(trade_id)
+        self.assertEqual(row["status"], "cancelled")
+        self.assertEqual(row["pnl"], 0.0)
+        self.assertIn("reason=tp1_before_fill", row["notes"])
+
+    def test_missing_row_logs_without_raising(self):
+        # No TradeHistory row was ever created for this order (e.g. a
+        # swarm-scan-executed signal today never calls _save_trade_record) —
+        # the DB update must no-op, not raise, and in-memory processing of
+        # the pending order must still complete normally.
+        asyncio.run(paper_wallet.paper_place_pending_order(**_order_kwargs()))
+
+        with patch.object(scheduler.settings, "is_paper_mode", return_value=True), \
+             patch.object(scheduler.ws_manager, "broadcast_nowait"), \
+             _patch_prices({"BTC/USDT": 99.0}):
+            asyncio.run(scheduler.update_paper_positions())  # must not raise
+
+        self.assertEqual(len(paper_wallet.get_pending_orders()), 0)
+        self.assertEqual(len(paper_wallet.get_open_positions()), 1)
+
+    def test_no_row_left_pending_after_fill_or_cancel(self):
+        fill_order = asyncio.run(paper_wallet.paper_place_pending_order(**_order_kwargs(symbol="BTC/USDT")))
+        cancel_order = asyncio.run(paper_wallet.paper_place_pending_order(
+            **_order_kwargs(symbol="ETH/USDT", entry_price=90.0)
+        ))
+        fill_trade_id = _make_pending_trade_row(fill_order["order_id"], symbol="BTC/USDT")
+        cancel_trade_id = _make_pending_trade_row(cancel_order["order_id"], symbol="ETH/USDT")
+
+        with patch.object(scheduler.settings, "is_paper_mode", return_value=True), \
+             patch.object(scheduler.ws_manager, "broadcast_nowait"), \
+             _patch_prices({"BTC/USDT": 99.0, "ETH/USDT": 115.0}):
+            asyncio.run(scheduler.update_paper_positions())
+
+        self.assertNotEqual(_get_trade_row(fill_trade_id)["status"], "pending")
+        self.assertNotEqual(_get_trade_row(cancel_trade_id)["status"], "pending")
 
 
 if __name__ == "__main__":
