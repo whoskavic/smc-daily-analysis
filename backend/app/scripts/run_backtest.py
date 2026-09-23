@@ -35,6 +35,7 @@ if str(BACKEND_DIR) not in sys.path:
 from app.services.backtest.engine import run_backtest  # noqa: E402
 from app.services.backtest.signal_simulator import SignalConfig  # noqa: E402
 from app.services.backtest.trade_simulator import SimConfig  # noqa: E402
+from app.services.smc_engine import SmcConfig  # noqa: E402
 
 
 def _parse_date(s: str) -> datetime:
@@ -78,6 +79,12 @@ def _parse_args(argv=None) -> argparse.Namespace:
                     help="Skip setups whose risk distance is below this multiple of ATR(14)")
     p.add_argument("--decision-schedule", choices=["every_bar", "daily"], default="every_bar",
                     help='"daily" decides once/day at settings.daily_analysis_time, matching live cadence')
+    p.add_argument("--break-mode", choices=["close", "wick"], default=SmcConfig.break_mode,
+                    help="smc_engine structure-break detection: candle CLOSE beyond the level (default) "
+                         "or a high/low wick piercing it")
+    p.add_argument("--ob-max-scan", type=int, default=SmcConfig.ob_max_scan,
+                    help="Cap the backward scan for order-block detection to this many candles "
+                         "(default: unbounded, scans to the start of the candle list)")
     p.add_argument("--no-save", action="store_true", help="Don't persist the run to the BacktestRun table.")
     return p.parse_args(argv)
 
@@ -132,6 +139,9 @@ def _render_summary_md(result: dict, args: argparse.Namespace) -> str:
     if result.get("signal_config"):
         for k, v in result["signal_config"].items():
             lines.append(f"- signal_config.{k}: `{v}`")
+    if result.get("smc_config"):
+        for k, v in result["smc_config"].items():
+            lines.append(f"- smc_config.{k}: `{v}`")
     lines.append("")
 
     lines += ["## Metrics", "", "| Metric | Value |", "|---|---|"]
@@ -294,6 +304,7 @@ def main(argv=None) -> None:
         )
 
     signal_config = SignalConfig(min_sl_pct=args.min_sl_pct, min_sl_atr=args.min_sl_atr)
+    smc_config = SmcConfig(break_mode=args.break_mode, ob_max_scan=args.ob_max_scan)
 
     result = run_backtest(
         symbol=args.symbol,
@@ -308,6 +319,7 @@ def main(argv=None) -> None:
         sim_config=sim_config,
         signal_config=signal_config,
         decision_schedule=args.decision_schedule,
+        smc_config=smc_config,
     )
 
     until_dt = args.until or datetime.now(timezone.utc)
@@ -329,6 +341,7 @@ def main(argv=None) -> None:
             leverage=leverage,
             min_sl_pct=args.min_sl_pct, min_sl_atr=args.min_sl_atr,
             decision_schedule=args.decision_schedule,
+            break_mode=args.break_mode, ob_max_scan=args.ob_max_scan,
         )
         run_id = _save_run(req, result)
         print(f"Saved as BacktestRun id={run_id}")

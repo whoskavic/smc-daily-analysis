@@ -21,6 +21,7 @@ import pandas as pd
 import vectorbt as vbt
 
 from app.services import smc_engine
+from app.services.smc_engine import SmcConfig
 from app.services.backtest import data_loader, smc_replay, signal_simulator, trade_simulator
 from app.services.backtest.signal_simulator import SignalConfig
 from app.services.backtest.trade_simulator import SimConfig
@@ -175,6 +176,7 @@ def run_backtest(
     sim_config: Optional[SimConfig] = None,
     signal_config: Optional[SignalConfig] = None,
     decision_schedule: str = "every_bar",
+    smc_config: Optional[SmcConfig] = None,
 ) -> Dict:
     """
     Full backtest run for one symbol over [since, until).
@@ -207,6 +209,10 @@ def run_backtest(
             live's run_daily_analysis cadence (and skipping the structural
             pre-filter there, since live doesn't use one). Replay — and
             bias_by_bar — still runs every bar regardless.
+        smc_config: SmcConfig (break_mode/ob_max_scan) for smc_engine's
+            detectors; if omitted, smc_engine's own default (today's only
+            behavior) is used. Backtest-only — no live/paper-trading caller
+            passes this.
 
     Returns a dict with summary stats, trade list, equity curve, decision-bar
     diagnostics, and (if sampled) a rule-vs-Claude decision comparison — see
@@ -274,7 +280,10 @@ def run_backtest(
     # and bias_by_bar share one consistent indexing with the in-range-only
     # candles array (candles_in_range) they're given below — replay() itself
     # only ever yields bar_index >= warmup_bars, so this is always >= 0.
-    for snap in smc_replay.replay(candles_15m, candles_1h, candles_4h, candles_1d, warmup_bars=warmup_bars):
+    for snap in smc_replay.replay(
+        candles_15m, candles_1h, candles_4h, candles_1d,
+        warmup_bars=warmup_bars, smc_config=smc_config,
+    ):
         rel_index = snap["bar_index"] - warmup_bars
         bias_by_bar[rel_index] = signal_simulator.primary_bias(
             snap["smc_levels"].get("confluence", {})
@@ -329,7 +338,7 @@ def run_backtest(
         return _empty_result(
             symbol, since, until, len(candles_in_range), sampled, sim_mode, empty_cfg,
             decision_schedule, total_decision_bars, signal_config,
-            lookback_start, lookback_complete, lookback_by_tf,
+            lookback_start, lookback_complete, lookback_by_tf, smc_config,
         )
 
     if sim_mode == "vbt_legacy":
@@ -352,6 +361,7 @@ def run_backtest(
         "lookback_start": lookback_start,
         "lookback_complete": lookback_complete,
         "lookback_by_tf": lookback_by_tf,
+        "smc_config": _smc_config_as_dict(smc_config),
         "bars_analyzed": len(candles_in_range),
         "signals_generated": len(signals),
         "claude_sample": sampled,
@@ -615,6 +625,14 @@ def _signal_config_as_dict(cfg: SignalConfig) -> Dict:
     }
 
 
+def _smc_config_as_dict(cfg: Optional[SmcConfig]) -> Dict:
+    cfg = cfg or SmcConfig()
+    return {
+        "break_mode": cfg.break_mode,
+        "ob_max_scan": cfg.ob_max_scan,
+    }
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Diagnostics — SL distance / cost realism (event mode only; vbt_legacy
 # trades carry no stop_loss/qty/fees/slippage_cost fields to derive these from)
@@ -799,13 +817,14 @@ def _empty_result(
     decision_schedule: str = "every_bar", decision_bars: int = 0,
     signal_config: Optional[SignalConfig] = None,
     lookback_start: Optional[str] = None, lookback_complete: bool = True,
-    lookback_by_tf: Optional[Dict] = None,
+    lookback_by_tf: Optional[Dict] = None, smc_config: Optional[SmcConfig] = None,
 ) -> Dict:
     return {
         "symbol": symbol, "since": since.isoformat(), "until": until.isoformat(),
         "lookback_start": lookback_start if lookback_start is not None else since.isoformat(),
         "lookback_complete": lookback_complete,
         "lookback_by_tf": lookback_by_tf or {},
+        "smc_config": _smc_config_as_dict(smc_config),
         "bars_analyzed": bars, "signals_generated": 0,
         "final_equity": None, "total_return_pct": 0.0, "win_rate_pct": 0.0,
         "sharpe_ratio": 0.0, "max_drawdown_pct": 0.0, "profit_factor": 0.0,

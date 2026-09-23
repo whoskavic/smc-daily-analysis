@@ -14,12 +14,14 @@ from app.models.database import SessionLocal, BacktestRun
 from app.services.backtest.engine import run_backtest, DEFAULT_FEES_PCT, DEFAULT_SLIPPAGE_PCT
 from app.services.backtest.signal_simulator import SignalConfig
 from app.services.backtest.trade_simulator import SimConfig
+from app.services.smc_engine import SmcConfig
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/backtest", tags=["backtest"])
 
 _DEFAULT_SIM = SimConfig()
 _DEFAULT_SIGNAL = SignalConfig()
+_DEFAULT_SMC = SmcConfig()
 
 
 class BacktestRequest(BaseModel):
@@ -51,6 +53,10 @@ class BacktestRequest(BaseModel):
     min_sl_atr: Optional[float] = Field(_DEFAULT_SIGNAL.min_sl_atr, gt=0)
     decision_schedule: Literal["every_bar", "daily"] = "every_bar"
 
+    # ── smc_engine variant config (optional, backtest-only) ──────────────────
+    break_mode: Literal["close", "wick"] = _DEFAULT_SMC.break_mode
+    ob_max_scan: Optional[int] = Field(_DEFAULT_SMC.ob_max_scan, gt=0)
+
 
 @router.post("/run")
 async def run_backtest_endpoint(req: BacktestRequest):
@@ -79,6 +85,7 @@ async def run_backtest_endpoint(req: BacktestRequest):
         )
 
     signal_config = SignalConfig(min_sl_pct=req.min_sl_pct, min_sl_atr=req.min_sl_atr)
+    smc_config = SmcConfig(break_mode=req.break_mode, ob_max_scan=req.ob_max_scan)
 
     try:
         result = run_backtest(
@@ -94,6 +101,7 @@ async def run_backtest_endpoint(req: BacktestRequest):
             sim_config=sim_config,
             signal_config=signal_config,
             decision_schedule=req.decision_schedule,
+            smc_config=smc_config,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

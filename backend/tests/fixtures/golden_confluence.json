@@ -1,0 +1,12 @@
+{
+  "score": 70,
+  "factors": {
+    "structure_1D": "bearish",
+    "structure_4H": "bullish",
+    "structure_1H": "bearish",
+    "structure_15m": "bearish"
+  },
+  "conflicts": [
+    "4H structure (bullish) conflicts with primary bias (bearish)"
+  ]
+}
