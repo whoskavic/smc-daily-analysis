@@ -573,11 +573,14 @@ def run_analysis(snapshot: Dict, max_retries: int = 1) -> Dict:
                 messages=messages,
             )
 
-            raw_text = _extract_text_block(message)
-
             if getattr(message, "stop_reason", None) == "max_tokens":
+                # Checked before extraction: a thinking model can burn the
+                # whole budget on thinking and leave no text block at all,
+                # which would otherwise surface as an unrelated "no text
+                # block in response" error instead of the real cause.
                 raise ValueError("response truncated at max_tokens (thinking may be consuming the budget)")
 
+            raw_text = _extract_text_block(message)
             analysis = _parse_json_response(raw_text)
 
             exec_d = analysis["execution"]

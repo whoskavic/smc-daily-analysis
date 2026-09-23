@@ -156,6 +156,9 @@ class TestRunAnalysisResponseBlocks(unittest.TestCase):
         self.assertEqual(result["execution"]["entry_price"], 65200.0)
 
     def test_thinking_only_falls_back_with_meaningful_reason_not_attribute_error(self):
+        # stop_reason defaults to "end_turn" — thinking ran to completion
+        # and the model simply never emitted a text block, so this must be
+        # reported as a missing text block, not truncation.
         result = _run_with_message(_Message([_ThinkingBlock()]))
 
         self.assertEqual(result["execution"]["decision"], "NO_TRADE")
@@ -165,9 +168,22 @@ class TestRunAnalysisResponseBlocks(unittest.TestCase):
         self.assertNotIn("AttributeError", reason)
         self.assertNotIn("has no attribute", reason)
 
+    def test_thinking_only_with_max_tokens_reports_truncation_not_missing_text_block(self):
+        # When thinking consumes the whole budget, content has no text
+        # block AND stop_reason == "max_tokens". The truncation check must
+        # run first — it's the real cause, and needs a different fix
+        # (raise the budget) than a missing text block would (fix
+        # extraction), so the two must never be conflated.
+        result = _run_with_message(_Message([_ThinkingBlock()], stop_reason="max_tokens"))
+
+        self.assertEqual(result["execution"]["decision"], "NO_TRADE")
+        reason = result["execution"]["no_trade_reason"]
+        self.assertIn("truncated at max_tokens", reason)
+        self.assertNotIn("no text block in response", reason)
+
     def test_max_tokens_truncation_raises_and_reaches_fallback(self):
         # Otherwise-parseable body, but stop_reason says it was cut off —
-        # the truncation check must fire before _parse_json_response runs.
+        # the truncation check must fire before extraction/parsing runs.
         trade_json = json.dumps(_valid_trade_json())
         result = _run_with_message(_Message([_TextBlock(trade_json)], stop_reason="max_tokens"))
 
