@@ -48,7 +48,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Dict, Optional
+from typing import Dict, List, Optional, Tuple
 
 import anthropic
 
@@ -348,6 +348,108 @@ def _validate_analysis(data: Dict) -> None:
             )
 
 
+def _strip_json_comments(text: str) -> str:
+    """Remove // line comments and /* */ block comments that are OUTSIDE
+    string literals. Single forward pass, tracking string/escape state —
+    never touches a "//" or "/*" that appears inside a JSON string."""
+    out: List[str] = []
+    in_string = False
+    escape = False
+    i, n = 0, len(text)
+    while i < n:
+        ch = text[i]
+        if in_string:
+            out.append(ch)
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_string = False
+            i += 1
+            continue
+
+        if ch == '"':
+            in_string = True
+            out.append(ch)
+            i += 1
+            continue
+        if ch == "/" and i + 1 < n and text[i + 1] == "/":
+            i += 2
+            while i < n and text[i] not in "\n\r":
+                i += 1
+            continue
+        if ch == "/" and i + 1 < n and text[i + 1] == "*":
+            i += 2
+            while i + 1 < n and not (text[i] == "*" and text[i + 1] == "/"):
+                i += 1
+            i = min(n, i + 2)
+            continue
+
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+
+def _strip_trailing_commas(text: str) -> str:
+    """Remove a comma that's immediately followed (past whitespace) by }
+    or ], OUTSIDE string literals. Same string/escape tracking as
+    _strip_json_comments — a "," inside a string is never touched."""
+    out: List[str] = []
+    in_string = False
+    escape = False
+    i, n = 0, len(text)
+    while i < n:
+        ch = text[i]
+        if in_string:
+            out.append(ch)
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_string = False
+            i += 1
+            continue
+
+        if ch == '"':
+            in_string = True
+            out.append(ch)
+            i += 1
+            continue
+        if ch == ",":
+            j = i + 1
+            while j < n and text[j] in " \t\r\n":
+                j += 1
+            if j < n and text[j] in "}]":
+                i += 1  # drop the comma, keep scanning from the whitespace
+                continue
+
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+
+def _repair_near_json(text: str) -> Tuple[str, List[str]]:
+    """
+    Best-effort repair of near-JSON that isn't quite valid: trailing
+    commas before } or ], and // or /* */ comments — both things a model
+    can slip in while otherwise producing correct JSON. Only ever called
+    after the strict json.loads() attempt has already failed.
+
+    Returns (repaired_text, applied) — `applied` names which repair(s)
+    actually changed the text, empty if neither did (nothing to retry).
+    """
+    applied: List[str] = []
+    repaired = _strip_json_comments(text)
+    if repaired != text:
+        applied.append("comments")
+    without_trailing_commas = _strip_trailing_commas(repaired)
+    if without_trailing_commas != repaired:
+        applied.append("trailing_commas")
+    return without_trailing_commas, applied
+
+
 def _parse_json_response(raw_text: str) -> Dict:
     """
     Parse Claude's response text as JSON and validate schema.
@@ -355,7 +457,10 @@ def _parse_json_response(raw_text: str) -> Dict:
     Defensive behaviour:
       - Strips accidental markdown fences (```json ... ```) if present.
       - Finds first '{' if there's unexpected leading text.
-      - Raises json.JSONDecodeError if not parseable.
+      - If strict parsing fails, retries once against a locally-repaired
+        copy (trailing commas / comments stripped, see _repair_near_json) —
+        no extra API call. If the repair doesn't help either, the ORIGINAL
+        json.JSONDecodeError is raised, unchanged.
       - Raises AnalysisValidationError if schema contract is violated.
     """
     text = raw_text.strip()
@@ -377,7 +482,20 @@ def _parse_json_response(raw_text: str) -> Dict:
         if brace_pos != -1:
             text = text[brace_pos:]
 
-    data = json.loads(text)   # raises json.JSONDecodeError on failure
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as strict_error:
+        repaired_text, applied = _repair_near_json(text)
+        data = None
+        if applied:
+            try:
+                data = json.loads(repaired_text)
+            except json.JSONDecodeError:
+                data = None
+        if data is None:
+            raise strict_error from None
+        logger.debug("[Claude] near-JSON repair succeeded (applied: %s)", ", ".join(applied))
+
     _validate_analysis(data)  # raises AnalysisValidationError on schema violation
     return data
 
