@@ -326,7 +326,7 @@ class TestBuildPrompt(unittest.TestCase):
 class TestRunAnalysisRetry(unittest.TestCase):
     def _make_msg(self, text):
         msg = MagicMock()
-        msg.content = [MagicMock(text=text)]
+        msg.content = [MagicMock(type="text", text=text)]
         return msg
 
     def test_success_first_attempt(self):
