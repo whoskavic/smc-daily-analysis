@@ -31,9 +31,10 @@ from __future__ import annotations
 
 import bisect
 from datetime import datetime, timezone
-from typing import Dict, Generator, List
+from typing import Dict, Generator, List, Optional
 
 from app.services import smc_engine
+from app.services.smc_engine import SmcConfig
 from app.services.session_utils import current_session
 
 WINDOW_1D = 30
@@ -92,6 +93,7 @@ def replay(
     candles_4h: List[Dict],
     candles_1d: List[Dict],
     warmup_bars: int = DEFAULT_WARMUP_BARS,
+    smc_config: Optional[SmcConfig] = None,
 ) -> Generator[Dict, None, None]:
     """
     Yield one snapshot dict per 15m bar, walk-forward, no lookahead.
@@ -99,6 +101,10 @@ def replay(
     Each yielded dict mirrors snapshot_builder.build_enriched_snapshot()'s
     shape (candles_1d/4h/1h/15m, smc_levels, kill_zone), plus `bar_index`,
     `timestamp`, and OHLC of the current bar for the simulator/engine.
+
+    smc_config: backtest-only opt-in SmcConfig (see smc_engine.py); None
+    (the default) means smc_engine.build_smc_levels() uses its own default
+    SmcConfig(), identical to today's behavior.
     """
     if len(candles_15m) <= warmup_bars:
         return
@@ -142,7 +148,7 @@ def replay(
             "1D": htf_windows["1D"], "4H": htf_windows["4H"],
             "1H": htf_windows["1H"], "15m": window_15m,
         }
-        smc_levels = smc_engine.build_smc_levels(candles_by_tf)
+        smc_levels = smc_engine.build_smc_levels(candles_by_tf, config=smc_config or SmcConfig())
         kill_zone = current_session(datetime.fromisoformat(as_of))
 
         yield {

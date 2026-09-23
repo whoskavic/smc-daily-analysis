@@ -15,12 +15,39 @@ Output key_levels items match the Phase 3 schema:
 """
 from __future__ import annotations
 
-from typing import Dict, List, Optional
+from dataclasses import dataclass
+from typing import Dict, List, Literal, Optional
 
 import numpy as np
 
 Candle = Dict
 Level = Dict
+
+
+@dataclass(frozen=True)
+class SmcConfig:
+    """
+    Opt-in detector configuration — every function below defaults to
+    SmcConfig() and every existing call site (which never passes `config`)
+    keeps running exactly as before. Backtest-only for now; nothing outside
+    the backtest may construct a non-default SmcConfig.
+
+    break_mode: how detect_bos_choch decides a swing high/low is broken.
+        "close" (default — matches master's only behavior prior to this
+            config existing): broken when a candle's CLOSE crosses beyond
+            the level.
+        "wick": broken when a candle's high/low pierces the level, even if
+            the close doesn't confirm it.
+    ob_max_scan: detect_order_blocks scans backward from a structure break
+        looking for the last opposite-colored candle to use as the order
+        block. None (default) scans all the way back to the start of the
+        candle list, as master always has. An int N caps that scan to the N
+        most recent candles (break_idx back to break_idx - N + 1) — an
+        order block further back than that is missed.
+    """
+    break_mode: Literal["close", "wick"] = "close"
+    ob_max_scan: Optional[int] = None
+
 
 _TF_WEIGHTS = {"1D": 0.4, "4H": 0.3, "1H": 0.2, "15m": 0.1}
 _TF_PRIORITY = ["1D", "4H", "1H", "15m"]
@@ -105,12 +132,16 @@ def detect_bos_choch(
     candles: List[Candle],
     swings: Optional[List[Dict]] = None,
     tf: str = "1H",
+    config: SmcConfig = SmcConfig(),
 ) -> List[Level]:
     """
     Walk candles chronologically, tracking the most recent unbroken swing
-    high/low. A close beyond that level is a structure break:
+    high/low. A break beyond that level is a structure break:
       - same direction as the established trend  → BOS (continuation)
       - opposite the established trend (or no trend yet) → CHoCH
+
+    config.break_mode picks what counts as "beyond": the candle's CLOSE
+    (default, "close") or its high/low wick ("wick").
     """
     if swings is None:
         swings = detect_swings(candles)
@@ -133,9 +164,14 @@ def detect_bos_choch(
                 active_low = p
             pivot_idx += 1
 
-        close = candle["close"]
+        if config.break_mode == "wick":
+            upside_break_price = candle["high"]
+            downside_break_price = candle["low"]
+        else:
+            upside_break_price = candle["close"]
+            downside_break_price = candle["close"]
 
-        if active_high and not active_high.get("_broken") and close > active_high["price"]:
+        if active_high and not active_high.get("_broken") and upside_break_price > active_high["price"]:
             direction = "bullish"
             event_type = "BOS" if trend in (None, "bullish") else "CHoCH"
             events.append({
@@ -151,7 +187,7 @@ def detect_bos_choch(
             active_high["_broken"] = True
             trend = "bullish"
 
-        if active_low and not active_low.get("_broken") and close < active_low["price"]:
+        if active_low and not active_low.get("_broken") and downside_break_price < active_low["price"]:
             direction = "bearish"
             event_type = "BOS" if trend in (None, "bearish") else "CHoCH"
             events.append({
@@ -178,26 +214,32 @@ def detect_order_blocks(
     candles: List[Candle],
     bos_events: Optional[List[Level]] = None,
     tf: str = "1H",
+    config: SmcConfig = SmcConfig(),
 ) -> List[Level]:
     """
     Bullish OB = last bearish (down-close) candle before a bullish break.
     Bearish OB = last bullish (up-close) candle before a bearish break.
+
+    config.ob_max_scan caps how far back that search looks (None, the
+    default, scans all the way to the start of `candles`, as master always
+    has — see SmcConfig's docstring).
     """
     if bos_events is None:
-        bos_events = detect_bos_choch(candles, tf=tf)
+        bos_events = detect_bos_choch(candles, tf=tf, config=config)
 
     obs: List[Level] = []
     for event in bos_events:
         break_idx = event["index"]
         direction = event["direction"]
+        scan_stop = -1 if config.ob_max_scan is None else max(-1, break_idx - config.ob_max_scan)
         ob_idx = None
         if direction == "bullish":
-            for j in range(break_idx, -1, -1):
+            for j in range(break_idx, scan_stop, -1):
                 if candles[j]["close"] < candles[j]["open"]:
                     ob_idx = j
                     break
         else:
-            for j in range(break_idx, -1, -1):
+            for j in range(break_idx, scan_stop, -1):
                 if candles[j]["close"] > candles[j]["open"]:
                     ob_idx = j
                     break
@@ -363,9 +405,9 @@ def premium_discount_levels(candles: List[Candle], tf: str = "1H") -> List[Level
 # MTF confluence scoring
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _tf_bias(candles: List[Candle]) -> str:
+def _tf_bias(candles: List[Candle], config: SmcConfig = SmcConfig()) -> str:
     """bullish/bearish/neutral — last BOS/CHoCH direction, else HH/HL vs LH/LL fallback."""
-    events = detect_bos_choch(candles)
+    events = detect_bos_choch(candles, config=config)
     if events:
         return events[-1]["direction"]
     if len(candles) >= 3:
@@ -378,7 +420,7 @@ def _tf_bias(candles: List[Candle]) -> str:
     return "neutral"
 
 
-def score_confluence(candles_by_tf: Dict[str, List[Candle]]) -> Dict:
+def score_confluence(candles_by_tf: Dict[str, List[Candle]], config: SmcConfig = SmcConfig()) -> Dict:
     """
     Weight each TF's structural bias (1D=0.4, 4H=0.3, 1H=0.2, 15m=0.1).
     Score = weighted agreement with the highest-TF non-neutral bias, 0-100.
@@ -388,7 +430,7 @@ def score_confluence(candles_by_tf: Dict[str, List[Candle]]) -> Dict:
     for tf, candles in candles_by_tf.items():
         if not candles:
             continue
-        bias = _tf_bias(candles)
+        bias = _tf_bias(candles, config=config)
         biases[tf] = bias
         factors[f"structure_{tf}"] = bias
 
@@ -435,10 +477,14 @@ def has_structural_setup(smc_levels: Dict, min_score: int = 35, min_levels: int 
 # Orchestrator
 # ─────────────────────────────────────────────────────────────────────────────
 
-def build_smc_levels(candles_by_tf: Dict[str, List[Candle]]) -> Dict:
+def build_smc_levels(candles_by_tf: Dict[str, List[Candle]], config: SmcConfig = SmcConfig()) -> Dict:
     """
     Run every detector per timeframe and assemble the smc_levels dict
     consumed by claude_service.build_prompt() (key: "smc_levels").
+
+    config defaults to SmcConfig() — every existing caller (live, paper
+    trading) never passes it and gets exactly today's behavior. Only the
+    backtest may pass a non-default config.
     """
     key_levels: List[Level] = []
 
@@ -446,9 +492,9 @@ def build_smc_levels(candles_by_tf: Dict[str, List[Candle]]) -> Dict:
         if not candles:
             continue
         swings = detect_swings(candles)
-        bos_events = detect_bos_choch(candles, swings, tf=tf)
+        bos_events = detect_bos_choch(candles, swings, tf=tf, config=config)
 
-        key_levels += detect_order_blocks(candles, bos_events, tf=tf)
+        key_levels += detect_order_blocks(candles, bos_events, tf=tf, config=config)
         key_levels += detect_fair_value_gaps(candles, tf=tf)
         key_levels += detect_liquidity_zones(candles, swings, tf=tf)
         key_levels += premium_discount_levels(candles, tf=tf)
@@ -461,7 +507,7 @@ def build_smc_levels(candles_by_tf: Dict[str, List[Candle]]) -> Dict:
             for e in bos_events
         ]
 
-    confluence = score_confluence(candles_by_tf)
+    confluence = score_confluence(candles_by_tf, config=config)
 
     return {
         "key_levels": key_levels,

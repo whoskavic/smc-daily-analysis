@@ -1,0 +1,18 @@
+[
+  {
+    "type": "Order Block Bearish",
+    "price": 110.1416565,
+    "low": 109.707949,
+    "high": 110.575364,
+    "tf": "1H",
+    "strength": 2
+  },
+  {
+    "type": "Order Block Bearish",
+    "price": 109.710838,
+    "low": 109.109161,
+    "high": 110.312515,
+    "tf": "1H",
+    "strength": 5
+  }
+]

@@ -1,0 +1,1640 @@
+{
+  "key_levels": [
+    {
+      "type": "Order Block Bearish",
+      "price": 106.179984,
+      "low": 105.812369,
+      "high": 106.547599,
+      "tf": "1D",
+      "strength": 2
+    },
+    {
+      "type": "Order Block Bullish",
+      "price": 104.989211,
+      "low": 104.794643,
+      "high": 105.183779,
+      "tf": "1D",
+      "strength": 4
+    },
+    {
+      "type": "Order Block Bullish",
+      "price": 103.298357,
+      "low": 102.681102,
+      "high": 103.915612,
+      "tf": "1D",
+      "strength": 4
+    },
+    {
+      "type": "Order Block Bearish",
+      "price": 105.9108905,
+      "low": 105.549302,
+      "high": 106.272479,
+      "tf": "1D",
+      "strength": 3
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 101.9051405,
+      "low": 101.803325,
+      "high": 102.006956,
+      "tf": "1D",
+      "strength": 2
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 103.0117045,
+      "low": 102.859353,
+      "high": 103.164056,
+      "tf": "1D",
+      "strength": 2
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 103.698522,
+      "low": 103.601504,
+      "high": 103.79554,
+      "tf": "1D",
+      "strength": 1
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 104.4621535,
+      "low": 104.270344,
+      "high": 104.653963,
+      "tf": "1D",
+      "strength": 3
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 105.4313915,
+      "low": 105.326771,
+      "high": 105.536012,
+      "tf": "1D",
+      "strength": 2
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 105.804211,
+      "low": 105.787483,
+      "high": 105.820939,
+      "tf": "1D",
+      "strength": 1
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 106.054753,
+      "low": 106.052563,
+      "high": 106.056943,
+      "tf": "1D",
+      "strength": 1
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 105.738046,
+      "low": 105.593039,
+      "high": 105.883053,
+      "tf": "1D",
+      "strength": 2
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 104.5742145,
+      "low": 104.096275,
+      "high": 105.052154,
+      "tf": "1D",
+      "strength": 7
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 103.6935635,
+      "low": 103.558326,
+      "high": 103.828801,
+      "tf": "1D",
+      "strength": 2
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 102.697588,
+      "low": 102.685497,
+      "high": 102.709679,
+      "tf": "1D",
+      "strength": 1
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 102.1990885,
+      "low": 102.134684,
+      "high": 102.263493,
+      "tf": "1D",
+      "strength": 1
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 104.5324,
+      "low": 104.270157,
+      "high": 104.794643,
+      "tf": "1D",
+      "strength": 4
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 105.443909,
+      "low": 105.183779,
+      "high": 105.704039,
+      "tf": "1D",
+      "strength": 4
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 106.7139745,
+      "low": 106.359795,
+      "high": 107.068154,
+      "tf": "1D",
+      "strength": 5
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 107.5776345,
+      "low": 107.480178,
+      "high": 107.675091,
+      "tf": "1D",
+      "strength": 1
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 105.8703435,
+      "low": 105.294701,
+      "high": 106.445986,
+      "tf": "1D",
+      "strength": 9
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 104.24335,
+      "low": 103.915612,
+      "high": 104.571088,
+      "tf": "1D",
+      "strength": 5
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 103.541257,
+      "low": 103.334722,
+      "high": 103.747792,
+      "tf": "1D",
+      "strength": 3
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 103.341322,
+      "low": 103.334722,
+      "high": 103.347922,
+      "tf": "1D",
+      "strength": 1
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 105.471949,
+      "low": 105.068328,
+      "high": 105.87557,
+      "tf": "1D",
+      "strength": 6
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 107.671904,
+      "low": 107.437279,
+      "high": 107.906529,
+      "tf": "1D",
+      "strength": 4
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 108.379049,
+      "low": 108.220579,
+      "high": 108.537519,
+      "tf": "1D",
+      "strength": 2
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 107.865925,
+      "low": 107.354762,
+      "high": 108.377088,
+      "tf": "1D",
+      "strength": 8
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 106.50586,
+      "low": 106.292117,
+      "high": 106.719603,
+      "tf": "1D",
+      "strength": 3
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 104.94146,
+      "low": 104.694587,
+      "high": 105.188333,
+      "tf": "1D",
+      "strength": 4
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 103.8404675,
+      "low": 103.727885,
+      "high": 103.95305,
+      "tf": "1D",
+      "strength": 2
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 102.843406,
+      "low": 102.836524,
+      "high": 102.850288,
+      "tf": "1D",
+      "strength": 1
+    },
+    {
+      "type": "Discount Zone",
+      "price": null,
+      "low": 99.932575,
+      "high": 105.195839,
+      "tf": "1D",
+      "strength": 5
+    },
+    {
+      "type": "BOS",
+      "price": 105.744373,
+      "low": null,
+      "high": null,
+      "tf": "1D",
+      "strength": 2
+    },
+    {
+      "type": "CHoCH",
+      "price": 106.747916,
+      "low": null,
+      "high": null,
+      "tf": "1D",
+      "strength": 4
+    },
+    {
+      "type": "BOS",
+      "price": 108.989507,
+      "low": null,
+      "high": null,
+      "tf": "1D",
+      "strength": 4
+    },
+    {
+      "type": "CHoCH",
+      "price": 102.614764,
+      "low": null,
+      "high": null,
+      "tf": "1D",
+      "strength": 3
+    },
+    {
+      "type": "Order Block Bullish",
+      "price": 101.7142305,
+      "low": 101.161985,
+      "high": 102.266476,
+      "tf": "4H",
+      "strength": 2
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 100.6730555,
+      "low": 100.658065,
+      "high": 100.688046,
+      "tf": "4H",
+      "strength": 1
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 101.8600425,
+      "low": 101.440405,
+      "high": 102.27968,
+      "tf": "4H",
+      "strength": 6
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 103.5305805,
+      "low": 103.414257,
+      "high": 103.646904,
+      "tf": "4H",
+      "strength": 2
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 106.9597505,
+      "low": 106.703567,
+      "high": 107.215934,
+      "tf": "4H",
+      "strength": 4
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 107.580228,
+      "low": 107.412069,
+      "high": 107.748387,
+      "tf": "4H",
+      "strength": 2
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 108.409489,
+      "low": 108.127749,
+      "high": 108.691229,
+      "tf": "4H",
+      "strength": 4
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 108.4247745,
+      "low": 108.15832,
+      "high": 108.691229,
+      "tf": "4H",
+      "strength": 4
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 107.340689,
+      "low": 107.297062,
+      "high": 107.384316,
+      "tf": "4H",
+      "strength": 1
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 106.510308,
+      "low": 106.034238,
+      "high": 106.986378,
+      "tf": "4H",
+      "strength": 7
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 105.048691,
+      "low": 104.788671,
+      "high": 105.308711,
+      "tf": "4H",
+      "strength": 4
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 103.0113145,
+      "low": 102.827109,
+      "high": 103.19552,
+      "tf": "4H",
+      "strength": 3
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 102.447101,
+      "low": 102.278344,
+      "high": 102.615858,
+      "tf": "4H",
+      "strength": 2
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 101.452892,
+      "low": 101.339306,
+      "high": 101.566478,
+      "tf": "4H",
+      "strength": 2
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 101.2499275,
+      "low": 100.705573,
+      "high": 101.794282,
+      "tf": "4H",
+      "strength": 8
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 102.6078705,
+      "low": 102.475603,
+      "high": 102.740138,
+      "tf": "4H",
+      "strength": 2
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 103.605615,
+      "low": 103.406557,
+      "high": 103.804673,
+      "tf": "4H",
+      "strength": 3
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 105.1115805,
+      "low": 104.570604,
+      "high": 105.652557,
+      "tf": "4H",
+      "strength": 8
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 106.553904,
+      "low": 105.941055,
+      "high": 107.166753,
+      "tf": "4H",
+      "strength": 9
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 107.977983,
+      "low": 107.853697,
+      "high": 108.102269,
+      "tf": "4H",
+      "strength": 2
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 108.443051,
+      "low": 108.393133,
+      "high": 108.492969,
+      "tf": "4H",
+      "strength": 1
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 107.665358,
+      "low": 107.3866,
+      "high": 107.944116,
+      "tf": "4H",
+      "strength": 4
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 106.7824895,
+      "low": 106.630866,
+      "high": 106.934113,
+      "tf": "4H",
+      "strength": 2
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 105.6851315,
+      "low": 105.594546,
+      "high": 105.775717,
+      "tf": "4H",
+      "strength": 1
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 104.757736,
+      "low": 104.256688,
+      "high": 105.258784,
+      "tf": "4H",
+      "strength": 7
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 103.148086,
+      "low": 102.900868,
+      "high": 103.395304,
+      "tf": "4H",
+      "strength": 4
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 102.307966,
+      "low": 102.266476,
+      "high": 102.349456,
+      "tf": "4H",
+      "strength": 1
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 103.3001365,
+      "low": 103.114022,
+      "high": 103.486251,
+      "tf": "4H",
+      "strength": 3
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 104.859309,
+      "low": 104.716922,
+      "high": 105.001696,
+      "tf": "4H",
+      "strength": 2
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 105.642603,
+      "low": 105.201005,
+      "high": 106.084201,
+      "tf": "4H",
+      "strength": 6
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 107.254773,
+      "low": 106.680326,
+      "high": 107.82922,
+      "tf": "4H",
+      "strength": 8
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 108.501293,
+      "low": 107.997431,
+      "high": 109.005155,
+      "tf": "4H",
+      "strength": 7
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 109.479261,
+      "low": 109.308209,
+      "high": 109.650313,
+      "tf": "4H",
+      "strength": 3
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 108.862927,
+      "low": 108.619869,
+      "high": 109.105985,
+      "tf": "4H",
+      "strength": 4
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 108.031474,
+      "low": 107.982811,
+      "high": 108.080137,
+      "tf": "4H",
+      "strength": 1
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 106.7505905,
+      "low": 106.448196,
+      "high": 107.052985,
+      "tf": "4H",
+      "strength": 4
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 104.8290405,
+      "low": 104.598333,
+      "high": 105.059748,
+      "tf": "4H",
+      "strength": 3
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 103.028212,
+      "low": 102.956528,
+      "high": 103.099896,
+      "tf": "4H",
+      "strength": 1
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 102.4809065,
+      "low": 102.289227,
+      "high": 102.672586,
+      "tf": "4H",
+      "strength": 3
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 101.884533,
+      "low": 101.481597,
+      "high": 102.287469,
+      "tf": "4H",
+      "strength": 6
+    },
+    {
+      "type": "Discount Zone",
+      "price": null,
+      "low": 99.292019,
+      "high": 104.702692,
+      "tf": "4H",
+      "strength": 5
+    },
+    {
+      "type": "BOS",
+      "price": 102.678064,
+      "low": null,
+      "high": null,
+      "tf": "4H",
+      "strength": 2
+    },
+    {
+      "type": "Order Block Bearish",
+      "price": 110.1416565,
+      "low": 109.707949,
+      "high": 110.575364,
+      "tf": "1H",
+      "strength": 2
+    },
+    {
+      "type": "Order Block Bearish",
+      "price": 109.710838,
+      "low": 109.109161,
+      "high": 110.312515,
+      "tf": "1H",
+      "strength": 5
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 100.93452,
+      "low": 100.820601,
+      "high": 101.048439,
+      "tf": "1H",
+      "strength": 2
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 102.7871775,
+      "low": 102.271386,
+      "high": 103.302969,
+      "tf": "1H",
+      "strength": 7
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 103.9946715,
+      "low": 103.910476,
+      "high": 104.078867,
+      "tf": "1H",
+      "strength": 1
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 104.9061135,
+      "low": 104.31598,
+      "high": 105.496247,
+      "tf": "1H",
+      "strength": 8
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 106.220175,
+      "low": 105.894697,
+      "high": 106.545653,
+      "tf": "1H",
+      "strength": 5
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 107.4558585,
+      "low": 107.161672,
+      "high": 107.750045,
+      "tf": "1H",
+      "strength": 4
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 107.916321,
+      "low": 107.913136,
+      "high": 107.919506,
+      "tf": "1H",
+      "strength": 1
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 108.716485,
+      "low": 108.494745,
+      "high": 108.938225,
+      "tf": "1H",
+      "strength": 3
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 110.8275865,
+      "low": 110.591474,
+      "high": 111.063699,
+      "tf": "1H",
+      "strength": 3
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 111.8902565,
+      "low": 111.804142,
+      "high": 111.976371,
+      "tf": "1H",
+      "strength": 1
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 111.0319975,
+      "low": 110.838495,
+      "high": 111.2255,
+      "tf": "1H",
+      "strength": 3
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 109.5119555,
+      "low": 109.315962,
+      "high": 109.707949,
+      "tf": "1H",
+      "strength": 3
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 108.336247,
+      "low": 108.154754,
+      "high": 108.51774,
+      "tf": "1H",
+      "strength": 3
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 107.046618,
+      "low": 106.766241,
+      "high": 107.326995,
+      "tf": "1H",
+      "strength": 4
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 105.914164,
+      "low": 105.677942,
+      "high": 106.150386,
+      "tf": "1H",
+      "strength": 3
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 104.7908215,
+      "low": 104.167585,
+      "high": 105.414058,
+      "tf": "1H",
+      "strength": 9
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 103.46185,
+      "low": 103.044446,
+      "high": 103.879254,
+      "tf": "1H",
+      "strength": 6
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 102.102196,
+      "low": 101.638164,
+      "high": 102.566228,
+      "tf": "1H",
+      "strength": 6
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 100.8566165,
+      "low": 100.49071,
+      "high": 101.222523,
+      "tf": "1H",
+      "strength": 5
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 100.780955,
+      "low": 100.523403,
+      "high": 101.038507,
+      "tf": "1H",
+      "strength": 4
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 101.7459635,
+      "low": 101.611934,
+      "high": 101.879993,
+      "tf": "1H",
+      "strength": 2
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 102.58049,
+      "low": 102.494948,
+      "high": 102.666032,
+      "tf": "1H",
+      "strength": 1
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 104.570181,
+      "low": 104.555073,
+      "high": 104.585289,
+      "tf": "1H",
+      "strength": 1
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 105.596455,
+      "low": 105.074126,
+      "high": 106.118784,
+      "tf": "1H",
+      "strength": 7
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 106.7714015,
+      "low": 106.48193,
+      "high": 107.060873,
+      "tf": "1H",
+      "strength": 4
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 108.9172235,
+      "low": 108.725286,
+      "high": 109.109161,
+      "tf": "1H",
+      "strength": 3
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 109.3503455,
+      "low": 109.105455,
+      "high": 109.595236,
+      "tf": "1H",
+      "strength": 3
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 108.3374575,
+      "low": 107.824528,
+      "high": 108.850387,
+      "tf": "1H",
+      "strength": 7
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 106.9368395,
+      "low": 106.71011,
+      "high": 107.163569,
+      "tf": "1H",
+      "strength": 3
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 104.278638,
+      "low": 103.859028,
+      "high": 104.698248,
+      "tf": "1H",
+      "strength": 6
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 102.6268085,
+      "low": 102.263333,
+      "high": 102.990284,
+      "tf": "1H",
+      "strength": 5
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 100.4084585,
+      "low": 100.325283,
+      "high": 100.491634,
+      "tf": "1H",
+      "strength": 1
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 99.016684,
+      "low": 98.683045,
+      "high": 99.350323,
+      "tf": "1H",
+      "strength": 5
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 98.130351,
+      "low": 97.629963,
+      "high": 98.630739,
+      "tf": "1H",
+      "strength": 7
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 97.443864,
+      "low": 97.359031,
+      "high": 97.528697,
+      "tf": "1H",
+      "strength": 1
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 98.4864065,
+      "low": 97.987837,
+      "high": 98.984976,
+      "tf": "1H",
+      "strength": 7
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 99.2373485,
+      "low": 99.213946,
+      "high": 99.260751,
+      "tf": "1H",
+      "strength": 1
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 99.8844185,
+      "low": 99.535575,
+      "high": 100.233262,
+      "tf": "1H",
+      "strength": 5
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 101.289484,
+      "low": 101.165329,
+      "high": 101.413639,
+      "tf": "1H",
+      "strength": 2
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 102.7308255,
+      "low": 102.166107,
+      "high": 103.295544,
+      "tf": "1H",
+      "strength": 8
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 104.77531,
+      "low": 104.32333,
+      "high": 105.22729,
+      "tf": "1H",
+      "strength": 6
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 105.7192915,
+      "low": 105.542319,
+      "high": 105.896264,
+      "tf": "1H",
+      "strength": 2
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 106.4238425,
+      "low": 105.959723,
+      "high": 106.887962,
+      "tf": "1H",
+      "strength": 6
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 107.8428705,
+      "low": 107.220903,
+      "high": 108.464838,
+      "tf": "1H",
+      "strength": 9
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 107.044351,
+      "low": 106.954531,
+      "high": 107.134171,
+      "tf": "1H",
+      "strength": 1
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 105.172038,
+      "low": 104.790596,
+      "high": 105.55348,
+      "tf": "1H",
+      "strength": 5
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 103.8588435,
+      "low": 103.851147,
+      "high": 103.86654,
+      "tf": "1H",
+      "strength": 1
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 102.212306,
+      "low": 101.98019,
+      "high": 102.444422,
+      "tf": "1H",
+      "strength": 3
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 101.1256935,
+      "low": 101.124524,
+      "high": 101.126863,
+      "tf": "1H",
+      "strength": 1
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 100.3835205,
+      "low": 99.891964,
+      "high": 100.875077,
+      "tf": "1H",
+      "strength": 7
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 100.919203,
+      "low": 100.546142,
+      "high": 101.292264,
+      "tf": "1H",
+      "strength": 5
+    },
+    {
+      "type": "Equal Highs",
+      "price": 110.601225,
+      "low": 110.58768,
+      "high": 110.61477,
+      "tf": "1H",
+      "strength": 4
+    },
+    {
+      "type": "Discount Zone",
+      "price": null,
+      "low": 96.834332,
+      "high": 105.111154,
+      "tf": "1H",
+      "strength": 5
+    },
+    {
+      "type": "BOS",
+      "price": 109.288624,
+      "low": null,
+      "high": null,
+      "tf": "1H",
+      "strength": 2
+    },
+    {
+      "type": "BOS",
+      "price": 98.224237,
+      "low": null,
+      "high": null,
+      "tf": "1H",
+      "strength": 5
+    },
+    {
+      "type": "Order Block Bearish",
+      "price": 109.295021,
+      "low": 108.673536,
+      "high": 109.916506,
+      "tf": "15m",
+      "strength": 3
+    },
+    {
+      "type": "Order Block Bullish",
+      "price": 114.3527185,
+      "low": 113.893801,
+      "high": 114.811636,
+      "tf": "15m",
+      "strength": 3
+    },
+    {
+      "type": "Order Block Bullish",
+      "price": 110.654402,
+      "low": 110.16921,
+      "high": 111.139594,
+      "tf": "15m",
+      "strength": 3
+    },
+    {
+      "type": "Order Block Bearish",
+      "price": 118.9434845,
+      "low": 118.194506,
+      "high": 119.692463,
+      "tf": "15m",
+      "strength": 2
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 102.284452,
+      "low": 101.806113,
+      "high": 102.762791,
+      "tf": "15m",
+      "strength": 7
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 103.368735,
+      "low": 102.896718,
+      "high": 103.840752,
+      "tf": "15m",
+      "strength": 7
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 104.920422,
+      "low": 104.792467,
+      "high": 105.048377,
+      "tf": "15m",
+      "strength": 2
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 106.663613,
+      "low": 106.348859,
+      "high": 106.978367,
+      "tf": "15m",
+      "strength": 4
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 107.302754,
+      "low": 107.299656,
+      "high": 107.305852,
+      "tf": "15m",
+      "strength": 1
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 109.524778,
+      "low": 109.15135,
+      "high": 109.898206,
+      "tf": "15m",
+      "strength": 5
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 110.6200765,
+      "low": 110.579925,
+      "high": 110.660228,
+      "tf": "15m",
+      "strength": 1
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 113.231349,
+      "low": 112.950456,
+      "high": 113.512242,
+      "tf": "15m",
+      "strength": 4
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 114.4245795,
+      "low": 114.010133,
+      "high": 114.839026,
+      "tf": "15m",
+      "strength": 6
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 112.9073235,
+      "low": 112.862811,
+      "high": 112.951836,
+      "tf": "15m",
+      "strength": 1
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 111.781878,
+      "low": 111.676215,
+      "high": 111.887541,
+      "tf": "15m",
+      "strength": 1
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 110.428082,
+      "low": 110.190332,
+      "high": 110.665832,
+      "tf": "15m",
+      "strength": 3
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 108.300475,
+      "low": 107.601835,
+      "high": 108.999115,
+      "tf": "15m",
+      "strength": 10
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 106.8824845,
+      "low": 106.865614,
+      "high": 106.899355,
+      "tf": "15m",
+      "strength": 1
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 105.584684,
+      "low": 105.142849,
+      "high": 106.026519,
+      "tf": "15m",
+      "strength": 6
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 103.9179375,
+      "low": 103.436256,
+      "high": 104.399619,
+      "tf": "15m",
+      "strength": 7
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 102.446903,
+      "low": 102.187418,
+      "high": 102.706388,
+      "tf": "15m",
+      "strength": 4
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 101.0018825,
+      "low": 100.80689,
+      "high": 101.196875,
+      "tf": "15m",
+      "strength": 3
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 101.2237,
+      "low": 100.80689,
+      "high": 101.64051,
+      "tf": "15m",
+      "strength": 6
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 103.4196105,
+      "low": 103.297602,
+      "high": 103.541619,
+      "tf": "15m",
+      "strength": 2
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 104.743719,
+      "low": 104.403941,
+      "high": 105.083497,
+      "tf": "15m",
+      "strength": 5
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 106.183495,
+      "low": 106.144581,
+      "high": 106.222409,
+      "tf": "15m",
+      "strength": 1
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 107.7207695,
+      "low": 107.297334,
+      "high": 108.144205,
+      "tf": "15m",
+      "strength": 6
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 109.5607515,
+      "low": 108.956171,
+      "high": 110.165332,
+      "tf": "15m",
+      "strength": 8
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 111.8220205,
+      "low": 111.769752,
+      "high": 111.874289,
+      "tf": "15m",
+      "strength": 1
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 112.8895595,
+      "low": 112.796973,
+      "high": 112.982146,
+      "tf": "15m",
+      "strength": 1
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 114.993261,
+      "low": 114.783131,
+      "high": 115.203391,
+      "tf": "15m",
+      "strength": 3
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 115.5714205,
+      "low": 115.511933,
+      "high": 115.630908,
+      "tf": "15m",
+      "strength": 1
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 116.4272365,
+      "low": 116.098088,
+      "high": 116.756385,
+      "tf": "15m",
+      "strength": 5
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 118.438215,
+      "low": 117.936479,
+      "high": 118.939951,
+      "tf": "15m",
+      "strength": 7
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 117.7730215,
+      "low": 117.614217,
+      "high": 117.931826,
+      "tf": "15m",
+      "strength": 2
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 116.7002275,
+      "low": 116.600299,
+      "high": 116.800156,
+      "tf": "15m",
+      "strength": 1
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 115.472108,
+      "low": 115.221543,
+      "high": 115.722673,
+      "tf": "15m",
+      "strength": 3
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 114.8169735,
+      "low": 114.640261,
+      "high": 114.993686,
+      "tf": "15m",
+      "strength": 2
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 112.738032,
+      "low": 112.487388,
+      "high": 112.988676,
+      "tf": "15m",
+      "strength": 3
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 112.026127,
+      "low": 111.527983,
+      "high": 112.524271,
+      "tf": "15m",
+      "strength": 7
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 113.2506885,
+      "low": 113.105742,
+      "high": 113.395635,
+      "tf": "15m",
+      "strength": 2
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 114.734506,
+      "low": 114.591545,
+      "high": 114.877467,
+      "tf": "15m",
+      "strength": 2
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 115.808952,
+      "low": 115.666583,
+      "high": 115.951321,
+      "tf": "15m",
+      "strength": 2
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 116.7868785,
+      "low": 116.74977,
+      "high": 116.823987,
+      "tf": "15m",
+      "strength": 1
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 117.878452,
+      "low": 117.396067,
+      "high": 118.360837,
+      "tf": "15m",
+      "strength": 7
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 119.0806195,
+      "low": 118.677064,
+      "high": 119.484175,
+      "tf": "15m",
+      "strength": 6
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 121.6731805,
+      "low": 121.354646,
+      "high": 121.991715,
+      "tf": "15m",
+      "strength": 4
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 123.0790275,
+      "low": 122.253133,
+      "high": 123.904922,
+      "tf": "15m",
+      "strength": 10
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 124.5847825,
+      "low": 124.488709,
+      "high": 124.680856,
+      "tf": "15m",
+      "strength": 1
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 124.965776,
+      "low": 124.850103,
+      "high": 125.081449,
+      "tf": "15m",
+      "strength": 2
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 127.048837,
+      "low": 126.677119,
+      "high": 127.420555,
+      "tf": "15m",
+      "strength": 5
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 129.4005095,
+      "low": 128.904143,
+      "high": 129.896876,
+      "tf": "15m",
+      "strength": 7
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 130.975992,
+      "low": 130.630914,
+      "high": 131.32107,
+      "tf": "15m",
+      "strength": 5
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 131.4905155,
+      "low": 131.396446,
+      "high": 131.584585,
+      "tf": "15m",
+      "strength": 1
+    },
+    {
+      "type": "Fair Value Gap Bullish",
+      "price": 132.1788865,
+      "low": 132.140873,
+      "high": 132.2169,
+      "tf": "15m",
+      "strength": 1
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 131.6191415,
+      "low": 131.514837,
+      "high": 131.723446,
+      "tf": "15m",
+      "strength": 1
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 128.745573,
+      "low": 128.625451,
+      "high": 128.865695,
+      "tf": "15m",
+      "strength": 2
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 126.392544,
+      "low": 125.943002,
+      "high": 126.842086,
+      "tf": "15m",
+      "strength": 6
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 125.24029,
+      "low": 125.000503,
+      "high": 125.480077,
+      "tf": "15m",
+      "strength": 3
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 122.6536115,
+      "low": 122.62174,
+      "high": 122.685483,
+      "tf": "15m",
+      "strength": 1
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 120.502362,
+      "low": 120.399001,
+      "high": 120.605723,
+      "tf": "15m",
+      "strength": 1
+    },
+    {
+      "type": "Fair Value Gap Bearish",
+      "price": 119.838368,
+      "low": 119.692463,
+      "high": 119.984273,
+      "tf": "15m",
+      "strength": 2
+    },
+    {
+      "type": "Discount Zone",
+      "price": null,
+      "low": 99.59943,
+      "high": 117.447651,
+      "tf": "15m",
+      "strength": 5
+    },
+    {
+      "type": "BOS",
+      "price": 106.770686,
+      "low": null,
+      "high": null,
+      "tf": "15m",
+      "strength": 3
+    },
+    {
+      "type": "CHoCH",
+      "price": 115.72151,
+      "low": null,
+      "high": null,
+      "tf": "15m",
+      "strength": 3
+    },
+    {
+      "type": "BOS",
+      "price": 112.210182,
+      "low": null,
+      "high": null,
+      "tf": "15m",
+      "strength": 3
+    },
+    {
+      "type": "CHoCH",
+      "price": 118.053728,
+      "low": null,
+      "high": null,
+      "tf": "15m",
+      "strength": 2
+    }
+  ],
+  "confluence": {
+    "score": 70,
+    "factors": {
+      "structure_1D": "bearish",
+      "structure_4H": "bullish",
+      "structure_1H": "bearish",
+      "structure_15m": "bearish"
+    },
+    "conflicts": [
+      "4H structure (bullish) conflicts with primary bias (bearish)"
+    ]
+  }
+}

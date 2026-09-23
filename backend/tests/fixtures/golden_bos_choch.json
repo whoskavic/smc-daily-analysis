@@ -1,0 +1,22 @@
+[
+  {
+    "type": "BOS",
+    "price": 109.288624,
+    "low": null,
+    "high": null,
+    "tf": "1H",
+    "strength": 2,
+    "direction": "bearish",
+    "index": 22
+  },
+  {
+    "type": "BOS",
+    "price": 98.224237,
+    "low": null,
+    "high": null,
+    "tf": "1H",
+    "strength": 5,
+    "direction": "bearish",
+    "index": 61
+  }
+]
