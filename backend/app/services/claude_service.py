@@ -568,7 +568,7 @@ def run_analysis(snapshot: Dict, max_retries: int = 1) -> Dict:
 
             message = client.messages.create(
                 model=settings.claude_model,
-                max_tokens=4096,
+                max_tokens=settings.claude_max_tokens,
                 system=_SYSTEM_PROMPT,
                 messages=messages,
             )
