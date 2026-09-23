@@ -8,7 +8,7 @@ Daily crypto trading analysis powered by **Binance market data** + **Claude AI**
 |-------|------|
 | Backend | Python · FastAPI · SQLite |
 | Data | Binance (via ccxt) · Alternative.me Fear & Greed |
-| AI | Anthropic Claude (claude-sonnet-4-6) |
+| AI | Anthropic Claude (claude-sonnet-5) |
 | Scheduler | APScheduler (runs daily at 08:00 WIB) |
 | Frontend | React · Vite · TradingView widget |
 
@@ -40,6 +40,8 @@ npm run dev         # opens http://localhost:3000
 Copy `.env.example` → `.env` in the root and fill in:
 
 - `ANTHROPIC_API_KEY` — **required** — get from console.anthropic.com
+- `CLAUDE_MODEL` — overrides the default model (`claude-sonnet-5`) at runtime
+- `CLAUDE_MAX_TOKENS` — overrides the default token budget (`16000`) at runtime; a thinking-capable model (like the default) needs the larger budget since extended thinking and the JSON reply share it
 - `BINANCE_API_KEY` / `BINANCE_API_SECRET` — optional, only needed for private endpoints
 - `WATCH_SYMBOLS` — list of ccxt-format symbols, e.g. `["BTC/USDT","ETH/USDT"]`
 - `DAILY_ANALYSIS_TIME` — 24h time in your local timezone (default `08:00`)
