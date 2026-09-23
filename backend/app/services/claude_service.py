@@ -503,6 +503,20 @@ def _get_client() -> anthropic.Anthropic:
     return anthropic.Anthropic(api_key=settings.anthropic_api_key)
 
 
+def _extract_text_block(message) -> str:
+    """
+    Claude's response content is a list of blocks, not always text-first —
+    a thinking model (extended thinking) puts a ThinkingBlock at content[0],
+    so content[0].text raises AttributeError (ThinkingBlock has no .text).
+    Find the first block whose type is "text" instead, wherever it sits.
+    """
+    for block in message.content:
+        if getattr(block, "type", None) == "text":
+            return block.text
+    block_types = ", ".join(getattr(b, "type", "?") for b in message.content)
+    raise ValueError(f"no text block in response (blocks: {block_types})")
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Main entry point
 # ─────────────────────────────────────────────────────────────────────────────
@@ -559,7 +573,11 @@ def run_analysis(snapshot: Dict, max_retries: int = 1) -> Dict:
                 messages=messages,
             )
 
-            raw_text = message.content[0].text
+            raw_text = _extract_text_block(message)
+
+            if getattr(message, "stop_reason", None) == "max_tokens":
+                raise ValueError("response truncated at max_tokens (thinking may be consuming the budget)")
+
             analysis = _parse_json_response(raw_text)
 
             exec_d = analysis["execution"]
