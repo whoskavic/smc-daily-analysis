@@ -175,6 +175,12 @@ def create_exchange(
     exchange = meta.ccxt_class(init_params)
     logger.info(f"[ExchangeFactory] Created {exchange_id} client (sandbox={sandbox})")
 
+    if exchange_id == "mexc":
+        # Key Futures-only tidak punya izin spot; fetch_currencies() MEXC memanggil
+        # endpoint spot privat /api/v3/capital/config/getall dan gagal. Data currency
+        # tidak dibutuhkan untuk swap — skip agar load_markets() hanya fetch_markets().
+        exchange.has["fetchCurrencies"] = False
+
     if sandbox:
         # ccxt's init-param "sandbox" flag is ignored by the constructor —
         # sandbox/testnet mode must be switched on via set_sandbox_mode()
