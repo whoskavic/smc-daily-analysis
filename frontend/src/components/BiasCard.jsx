@@ -2,10 +2,10 @@ export default function BiasCard({ analysis }) {
   if (!analysis) return null;
 
   const biasColor = {
-    bullish: "#3fb950",
-    bearish: "#f85149",
-    neutral: "#d29922",
-  }[analysis.bias] ?? "#8b949e";
+    bullish: "var(--long)",
+    bearish: "var(--short)",
+    neutral: "var(--warn)",
+  }[analysis.bias] ?? "var(--muted)";
 
   const biasIcon = { bullish: "▲", bearish: "▼", neutral: "◆" }[analysis.bias] ?? "—";
 
@@ -47,7 +47,7 @@ export default function BiasCard({ analysis }) {
       {analysis.funding_rate != null && (
         <div style={styles.row}>
           <span style={styles.label}>Funding</span>
-          <span style={{ color: analysis.funding_rate > 0 ? "#3fb950" : "#f85149" }}>
+          <span style={{ color: analysis.funding_rate > 0 ? "var(--long)" : "var(--short)" }}>
             {(analysis.funding_rate * 100).toFixed(4)}%
           </span>
         </div>
@@ -65,9 +65,9 @@ export default function BiasCard({ analysis }) {
 
 const styles = {
   card: {
-    background: "#161b22",
-    border: "1px solid #30363d",
-    borderRadius: 8,
+    background: "var(--panel)",
+    border: "1px solid var(--border)",
+    borderRadius: "var(--radius)",
     padding: "16px",
     display: "flex",
     flexDirection: "column",
@@ -78,11 +78,11 @@ const styles = {
     justifyContent: "space-between",
     alignItems: "center",
   },
-  symbol: { fontSize: 18, fontWeight: 700, color: "#e6edf3" },
+  symbol: { fontSize: 18, fontWeight: 700, color: "var(--text)" },
   bias: { fontSize: 20, fontWeight: 800, letterSpacing: 1 },
   row: { display: "flex", alignItems: "center", gap: 8 },
-  label: { color: "#8b949e", fontSize: 13, minWidth: 90 },
-  value: { color: "#e6edf3", fontSize: 14, fontWeight: 500 },
-  barBg: { flex: 1, height: 6, background: "#21262d", borderRadius: 99 },
+  label: { color: "var(--muted)", fontSize: 13, minWidth: 90 },
+  value: { color: "var(--text)", fontSize: 14, fontWeight: 500 },
+  barBg: { flex: 1, height: 6, background: "var(--hover)", borderRadius: 99 },
   barFill: { height: 6, borderRadius: 99, transition: "width 0.4s" },
 };

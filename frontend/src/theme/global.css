@@ -1,0 +1,54 @@
+/*
+ * theme/global.css — applies theme/tokens.css globally. Imported once
+ * from main.jsx, before the app renders.
+ */
+@import "./tokens.css";
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 13px;
+  line-height: 1.5;
+  /* Numbers (price, PnL, %, size) keep fixed digit widths everywhere —
+     set once here instead of on every numeric span. */
+  font-variant-numeric: tabular-nums;
+}
+
+/* Thin, flat scrollbars — terminal look, not the browser default. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--hover) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--hover);
+  border-radius: var(--radius-sm);
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--border-strong);
+}
+
+/* Table row hover — a CSS class (not React state) so plain <tr> markup
+   stays untouched; !important is needed to win over the inline
+   background each row already sets for even/odd striping. */
+.tr-hover:hover {
+  background: var(--hover) !important;
+}

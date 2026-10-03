@@ -1,22 +1,29 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { createChart, ColorType, LineStyle } from "lightweight-charts";
 import { getChartData } from "../api";
+import { tokens } from "../theme/tokens";
 
 const REFRESH_MS = 60_000;
 const TIMEFRAMES = ["15m", "1h", "4h", "1d"];
 
 const MIN_STRENGTH = 3; // hide weak/low-conviction levels to keep the chart readable
 
+// Overlay logic unchanged — only the colors are tokenized. CHoCH is a
+// reversal signal and must stay visually distinct from the other
+// structural lines, so it gets --warn rather than --muted; BOS/liquidity
+// stay thin structural lines (accent/muted per the theme spec); bullish-
+// biased levels (OB bullish, discount) use --long, bearish-biased ones
+// (OB bearish, premium) use --short.
 function levelColor(type) {
   const t = type.toLowerCase();
-  if (t.includes("choch")) return "#f0883e";
-  if (t.includes("bos")) return "#58a6ff";
-  if (t.includes("bullish")) return "#3fb950";
-  if (t.includes("bearish")) return "#f85149";
-  if (t.includes("equal") || t.includes("liquidity")) return "#d2a8ff";
-  if (t.includes("discount")) return "#3fb950";
-  if (t.includes("premium")) return "#f85149";
-  return "#8b949e";
+  if (t.includes("choch")) return tokens.warn;
+  if (t.includes("bos")) return tokens.accent;
+  if (t.includes("bullish")) return tokens.long;
+  if (t.includes("bearish")) return tokens.short;
+  if (t.includes("equal") || t.includes("liquidity")) return tokens.muted;
+  if (t.includes("discount")) return tokens.long;
+  if (t.includes("premium")) return tokens.short;
+  return tokens.muted;
 }
 
 function toUnixSeconds(iso) {
@@ -41,24 +48,28 @@ export default function SmcChart({ symbol }) {
       width: containerRef.current.clientWidth,
       height: containerRef.current.clientHeight,
       layout: {
-        background: { type: ColorType.Solid, color: "#0d1117" },
-        textColor: "#c9d1d9",
+        background: { type: ColorType.Solid, color: tokens.bg },
+        textColor: tokens.muted,
       },
       grid: {
-        vertLines: { color: "#161b22" },
-        horzLines: { color: "#161b22" },
+        vertLines: { color: tokens.panel },
+        horzLines: { color: tokens.panel },
       },
-      rightPriceScale: { borderColor: "#21262d" },
-      timeScale: { borderColor: "#21262d", timeVisible: true },
-      crosshair: { mode: 0 },
+      rightPriceScale: { borderColor: tokens.border },
+      timeScale: { borderColor: tokens.border, timeVisible: true },
+      crosshair: {
+        mode: 0,
+        vertLine: { color: tokens.muted, labelBackgroundColor: tokens.panel },
+        horzLine: { color: tokens.muted, labelBackgroundColor: tokens.panel },
+      },
     });
 
     const series = chart.addCandlestickSeries({
-      upColor: "#3fb950",
-      downColor: "#f85149",
+      upColor: tokens.long,
+      downColor: tokens.short,
       borderVisible: false,
-      wickUpColor: "#3fb950",
-      wickDownColor: "#f85149",
+      wickUpColor: tokens.long,
+      wickDownColor: tokens.short,
     });
 
     chartRef.current = chart;
@@ -181,9 +192,9 @@ const styles = {
     display: "flex",
     flexDirection: "column",
     height: "100%",
-    background: "#0d1117",
-    border: "1px solid #21262d",
-    borderRadius: 8,
+    background: "var(--panel)",
+    border: "1px solid var(--border)",
+    borderRadius: "var(--radius)",
     overflow: "hidden",
   },
   header: {
@@ -192,24 +203,24 @@ const styles = {
     gap: 12,
     padding: "6px 12px",
     fontSize: 12,
-    color: "#8b949e",
-    borderBottom: "1px solid #21262d",
-    background: "#161b22",
+    color: "var(--muted)",
+    borderBottom: "1px solid var(--border)",
+    background: "var(--panel)",
   },
-  symbol: { fontWeight: 700, color: "#e6edf3", fontSize: 13 },
+  symbol: { fontWeight: 700, color: "var(--text)", fontSize: 13 },
   tfGroup: { display: "flex", gap: 4 },
   tfBtn: {
     background: "transparent",
-    border: "1px solid #30363d",
-    borderRadius: 4,
-    color: "#8b949e",
+    border: "1px solid var(--border)",
+    borderRadius: "var(--radius-sm)",
+    color: "var(--muted)",
     fontSize: 11,
     padding: "2px 8px",
     cursor: "pointer",
   },
-  tfBtnActive: { borderColor: "#58a6ff", color: "#58a6ff" },
-  confluence: { marginLeft: "auto", color: "#8b949e" },
-  loading: { color: "#58a6ff" },
-  error: { color: "#f85149" },
+  tfBtnActive: { borderColor: "var(--accent)", color: "var(--accent)" },
+  confluence: { marginLeft: "auto", color: "var(--muted)" },
+  loading: { color: "var(--accent)" },
+  error: { color: "var(--short)" },
   chart: { flex: 1, minHeight: 0 },
 };

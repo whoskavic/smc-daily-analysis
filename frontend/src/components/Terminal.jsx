@@ -80,7 +80,7 @@ export default function TerminalPage() {
       <div style={styles.topBar}>
         <SymbolSelector symbols={symbols} selected={selectedSymbol} onChange={setSelectedSymbol} />
         <div style={styles.connStatus}>
-          <span style={{ ...styles.connDot, background: connected ? "#3fb950" : "#f85149" }} />
+          <span style={{ ...styles.connDot, background: connected ? "var(--long)" : "var(--short)" }} />
           {connected ? "live" : "reconnecting…"}
           {lastTrade && (
             <span style={styles.lastTrade}>
@@ -126,10 +126,10 @@ const styles = {
     alignItems: "center",
     gap: 6,
     fontSize: 12,
-    color: "#8b949e",
+    color: "var(--muted)",
   },
   connDot: { width: 8, height: 8, borderRadius: "50%" },
-  lastTrade: { color: "#58a6ff", marginLeft: 8 },
+  lastTrade: { color: "var(--accent)", marginLeft: 8 },
   grid: {
     flex: 1,
     minHeight: 0,

@@ -37,7 +37,7 @@ export default function TradeExecutor({ analysis, symbol }) {
   );
 
   const rr = tradeIdea.rr?.toFixed(1) ?? "?";
-  const dirColor = tradeIdea.direction === "LONG" ? "#3fb950" : tradeIdea.direction === "SHORT" ? "#f85149" : "#8b949e";
+  const dirColor = tradeIdea.direction === "LONG" ? "var(--long)" : tradeIdea.direction === "SHORT" ? "var(--short)" : "var(--muted)";
 
   const handleExecute = async () => {
     setLoading(true);
@@ -84,11 +84,11 @@ export default function TradeExecutor({ analysis, symbol }) {
         </div>
         <div style={styles.planRow}>
           <span style={styles.label}>Stop Loss</span>
-          <span style={{ color: "#f85149", fontWeight: 600 }}>${tradeIdea.stopLoss?.toLocaleString()}</span>
+          <span style={{ color: "var(--short)", fontWeight: 600 }}>${tradeIdea.stopLoss?.toLocaleString()}</span>
         </div>
         <div style={styles.planRow}>
           <span style={styles.label}>Take Profit</span>
-          <span style={{ color: "#3fb950", fontWeight: 600 }}>${tradeIdea.takeProfit?.toLocaleString()}</span>
+          <span style={{ color: "var(--long)", fontWeight: 600 }}>${tradeIdea.takeProfit?.toLocaleString()}</span>
         </div>
         <div style={styles.planRow}>
           <span style={styles.label}>Risk/Reward</span>
@@ -150,7 +150,7 @@ export default function TradeExecutor({ analysis, symbol }) {
                 {loading ? "Placing orders..." : "Confirm & Execute"}
               </button>
               <button
-                style={{ ...styles.btn, background: "#21262d", flex: 1 }}
+                style={{ ...styles.btn, ...styles.btnSecondary, flex: 1 }}
                 onClick={() => setConfirming(false)}
               >
                 Cancel
@@ -163,12 +163,12 @@ export default function TradeExecutor({ analysis, symbol }) {
       {/* Result */}
       {result && (
         <div style={styles.successBox}>
-          <p style={{ color: "#3fb950", fontWeight: 700 }}>Trade Executed</p>
+          <p style={{ color: "var(--long)", fontWeight: 700 }}>Trade Executed</p>
           <p style={styles.resultLine}>Entry Order ID: {result.entry_order_id}</p>
           <p style={styles.resultLine}>SL Order ID: {result.sl_order_id}</p>
           <p style={styles.resultLine}>TP Order ID: {result.tp_order_id}</p>
           <p style={styles.resultLine}>Qty: {result.quantity} {symbol.split("/")[0]}</p>
-          <button style={{ ...styles.btn, background: "#21262d", marginTop: 8 }} onClick={() => setResult(null)}>
+          <button style={{ ...styles.btn, ...styles.btnSecondary, marginTop: 8 }} onClick={() => setResult(null)}>
             Done
           </button>
         </div>
@@ -229,73 +229,78 @@ function parseTradePlan(analysis) {
 
 const styles = {
   container: { display: "flex", flexDirection: "column", gap: 12 },
-  title: { fontSize: 15, fontWeight: 700, color: "#e6edf3" },
+  title: { fontSize: 15, fontWeight: 700, color: "var(--text)" },
   planBox: {
-    background: "#161b22",
-    border: "1px solid #30363d",
-    borderRadius: 8,
+    background: "var(--panel)",
+    border: "1px solid var(--border)",
+    borderRadius: "var(--radius)",
     padding: 12,
     display: "flex",
     flexDirection: "column",
     gap: 7,
   },
   planRow: { display: "flex", justifyContent: "space-between", alignItems: "center" },
-  label: { color: "#8b949e", fontSize: 13 },
-  val: { color: "#e6edf3", fontWeight: 600, fontSize: 13 },
+  label: { color: "var(--muted)", fontSize: 13 },
+  val: { color: "var(--text)", fontWeight: 600, fontSize: 13 },
   controls: { display: "flex", flexDirection: "column", gap: 8 },
   inputRow: { display: "flex", justifyContent: "space-between", alignItems: "center" },
   input: {
-    background: "#21262d",
-    border: "1px solid #30363d",
-    color: "#e6edf3",
-    borderRadius: 6,
+    background: "var(--hover)",
+    border: "1px solid var(--border)",
+    color: "var(--text)",
+    borderRadius: "var(--radius)",
     padding: "4px 10px",
     width: 110,
     fontSize: 13,
   },
-  sizeNote: { fontSize: 12, color: "#8b949e", textAlign: "right" },
+  sizeNote: { fontSize: 12, color: "var(--muted)", textAlign: "right" },
   warning: {
-    background: "#2d1f00",
-    border: "1px solid #d29922",
-    color: "#d29922",
-    borderRadius: 6,
+    background: "color-mix(in srgb, var(--warn) 14%, var(--panel))",
+    border: "1px solid var(--warn)",
+    color: "var(--warn)",
+    borderRadius: "var(--radius)",
     padding: "8px 12px",
     fontSize: 12,
   },
   btn: {
     border: "none",
-    borderRadius: 6,
+    borderRadius: "var(--radius)",
     padding: "10px 16px",
     cursor: "pointer",
     fontWeight: 700,
     fontSize: 13,
-    color: "#fff",
+    color: "var(--bg)",
     width: "100%",
   },
+  btnSecondary: {
+    background: "var(--hover)",
+    color: "var(--text)",
+    border: "1px solid var(--border)",
+  },
   confirmBox: {
-    background: "#161b22",
-    border: "1px solid #30363d",
-    borderRadius: 8,
+    background: "var(--panel)",
+    border: "1px solid var(--border)",
+    borderRadius: "var(--radius)",
     padding: 12,
     display: "flex",
     flexDirection: "column",
     gap: 10,
   },
-  confirmText: { fontSize: 13, color: "#e6edf3", lineHeight: 1.6 },
+  confirmText: { fontSize: 13, color: "var(--text)", lineHeight: 1.6 },
   successBox: {
-    background: "#0d2119",
-    border: "1px solid #3fb950",
-    borderRadius: 8,
+    background: "color-mix(in srgb, var(--long) 10%, var(--panel))",
+    border: "1px solid var(--long)",
+    borderRadius: "var(--radius)",
     padding: 12,
   },
-  resultLine: { fontSize: 12, color: "#8b949e", marginTop: 4 },
+  resultLine: { fontSize: 12, color: "var(--muted)", marginTop: 4 },
   errorBox: {
-    background: "#3d1f1f",
-    border: "1px solid #f85149",
-    color: "#f85149",
-    borderRadius: 6,
+    background: "color-mix(in srgb, var(--short) 14%, var(--panel))",
+    border: "1px solid var(--short)",
+    color: "var(--short)",
+    borderRadius: "var(--radius)",
     padding: "8px 12px",
     fontSize: 12,
   },
-  empty: { color: "#8b949e", fontSize: 13, textAlign: "center", padding: "20px 0" },
+  empty: { color: "var(--muted)", fontSize: 13, textAlign: "center", padding: "20px 0" },
 };
