@@ -150,7 +150,7 @@ export default function TradeExecutor({ analysis, symbol }) {
                 {loading ? "Placing orders..." : "Confirm & Execute"}
               </button>
               <button
-                style={{ ...styles.btn, background: "var(--hover)", flex: 1 }}
+                style={{ ...styles.btn, ...styles.btnSecondary, flex: 1 }}
                 onClick={() => setConfirming(false)}
               >
                 Cancel
@@ -168,7 +168,7 @@ export default function TradeExecutor({ analysis, symbol }) {
           <p style={styles.resultLine}>SL Order ID: {result.sl_order_id}</p>
           <p style={styles.resultLine}>TP Order ID: {result.tp_order_id}</p>
           <p style={styles.resultLine}>Qty: {result.quantity} {symbol.split("/")[0]}</p>
-          <button style={{ ...styles.btn, background: "var(--hover)", marginTop: 8 }} onClick={() => setResult(null)}>
+          <button style={{ ...styles.btn, ...styles.btnSecondary, marginTop: 8 }} onClick={() => setResult(null)}>
             Done
           </button>
         </div>
@@ -271,6 +271,11 @@ const styles = {
     fontSize: 13,
     color: "var(--bg)",
     width: "100%",
+  },
+  btnSecondary: {
+    background: "var(--hover)",
+    color: "var(--text)",
+    border: "1px solid var(--border)",
   },
   confirmBox: {
     background: "var(--panel)",

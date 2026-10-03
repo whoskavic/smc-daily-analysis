@@ -8,13 +8,15 @@ const TIMEFRAMES = ["15m", "1h", "4h", "1d"];
 
 const MIN_STRENGTH = 3; // hide weak/low-conviction levels to keep the chart readable
 
-// Overlay logic unchanged — only the colors are tokenized. BOS/CHoCH/
-// liquidity stay thin structural lines (muted/accent per the theme spec);
-// bullish-biased levels (OB bullish, discount) use --long, bearish-biased
-// ones (OB bearish, premium) use --short.
+// Overlay logic unchanged — only the colors are tokenized. CHoCH is a
+// reversal signal and must stay visually distinct from the other
+// structural lines, so it gets --warn rather than --muted; BOS/liquidity
+// stay thin structural lines (accent/muted per the theme spec); bullish-
+// biased levels (OB bullish, discount) use --long, bearish-biased ones
+// (OB bearish, premium) use --short.
 function levelColor(type) {
   const t = type.toLowerCase();
-  if (t.includes("choch")) return tokens.muted;
+  if (t.includes("choch")) return tokens.warn;
   if (t.includes("bos")) return tokens.accent;
   if (t.includes("bullish")) return tokens.long;
   if (t.includes("bearish")) return tokens.short;
