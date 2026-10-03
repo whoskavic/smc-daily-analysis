@@ -1,0 +1,37 @@
+/*
+ * theme/tokens.css — single source of truth for the UI palette
+ * (Hyperliquid-inspired dark theme). CSS custom properties consumed by
+ * every component's inline styles.
+ *
+ * jaga tetap sinkron dengan theme/tokens.js — lightweight-charts dan
+ * xterm.js tidak bisa membaca CSS custom properties, jadi nilai yang
+ * sama juga dituliskan ulang di sana sebagai objek JS.
+ */
+:root {
+  --bg: #0F1A1F;
+  --panel: #1B2429;
+  --hover: #273035;
+
+  --border: #303030;
+  --border-strong: #3E3E3E;
+
+  --text: #F6FEFD;
+  --text-2: #D2DAD7;
+  --muted: #949E9C;
+
+  --accent: #50D2C1;
+  --accent-bg: #0E3333;
+
+  --long: #1FA67D;
+  --long-bg: #0B3226;
+  --short: #ED7088;
+  --short-bg: #34242E;
+
+  --warn: #E2C275; /* bukan dari Hyperliquid — dipakai untuk log WARNING & badge netral */
+
+  --radius: 5px;
+  --radius-sm: 4px;
+
+  --font: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
+}

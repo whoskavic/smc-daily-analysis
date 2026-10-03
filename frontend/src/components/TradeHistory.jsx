@@ -24,24 +24,24 @@ export default function TradeHistory() {
   const wins = trades.filter((t) => t.pnl > 0).length;
   const losses = trades.filter((t) => t.pnl < 0).length;
 
-  if (loading) return <p style={{ color: "#8b949e", fontSize: 13 }}>Loading history...</p>;
-  if (!trades.length) return <p style={{ color: "#8b949e", fontSize: 13 }}>No trades yet.</p>;
+  if (loading) return <p style={{ color: "var(--muted)", fontSize: 13 }}>Loading history...</p>;
+  if (!trades.length) return <p style={{ color: "var(--muted)", fontSize: 13 }}>No trades yet.</p>;
 
   return (
     <div style={styles.container}>
       {/* Summary stats */}
       <div style={styles.stats}>
-        <Stat label="Total PnL" value={`${totalPnl >= 0 ? "+" : ""}${totalPnl.toFixed(2)} USDT`} color={totalPnl >= 0 ? "#3fb950" : "#f85149"} />
-        <Stat label="Wins" value={wins} color="#3fb950" />
-        <Stat label="Losses" value={losses} color="#f85149" />
+        <Stat label="Total PnL" value={`${totalPnl >= 0 ? "+" : ""}${totalPnl.toFixed(2)} USDT`} color={totalPnl >= 0 ? "var(--long)" : "var(--short)"} />
+        <Stat label="Wins" value={wins} color="var(--long)" />
+        <Stat label="Losses" value={losses} color="var(--short)" />
         <Stat label="Win Rate" value={trades.length ? `${Math.round((wins / (wins + losses || 1)) * 100)}%` : "-"} />
       </div>
 
       {/* Trade rows */}
       <div style={styles.list}>
         {trades.map((t) => {
-          const dirColor = t.direction === "LONG" ? "#3fb950" : "#f85149";
-          const statusColor = { open: "#58a6ff", closed: "#8b949e", cancelled: "#8b949e" }[t.status] ?? "#8b949e";
+          const dirColor = t.direction === "LONG" ? "var(--long)" : "var(--short)";
+          const statusColor = { open: "var(--accent)", closed: "var(--muted)", cancelled: "var(--muted)" }[t.status] ?? "var(--muted)";
           return (
             <div key={t.id} style={styles.row}>
               <div style={styles.rowLeft}>
@@ -53,7 +53,7 @@ export default function TradeHistory() {
               </div>
               <div style={styles.rowRight}>
                 {t.pnl != null && (
-                  <span style={{ color: t.pnl >= 0 ? "#3fb950" : "#f85149", fontWeight: 700, fontSize: 13 }}>
+                  <span style={{ color: t.pnl >= 0 ? "var(--long)" : "var(--short)", fontWeight: 700, fontSize: 13 }}>
                     {t.pnl >= 0 ? "+" : ""}{t.pnl.toFixed(2)} USDT
                   </span>
                 )}
@@ -73,7 +73,7 @@ function Stat({ label, value, color }) {
   return (
     <div style={styles.stat}>
       <span style={styles.statLabel}>{label}</span>
-      <span style={{ color: color ?? "#e6edf3", fontWeight: 700, fontSize: 15 }}>{value}</span>
+      <span style={{ color: color ?? "var(--text)", fontWeight: 700, fontSize: 15 }}>{value}</span>
     </div>
   );
 }
@@ -86,20 +86,20 @@ const styles = {
     gap: 8,
   },
   stat: {
-    background: "#161b22",
-    border: "1px solid #21262d",
-    borderRadius: 8,
+    background: "var(--panel)",
+    border: "1px solid var(--border)",
+    borderRadius: "var(--radius)",
     padding: "10px 12px",
     display: "flex",
     flexDirection: "column",
     gap: 4,
   },
-  statLabel: { fontSize: 11, color: "#8b949e" },
+  statLabel: { fontSize: 11, color: "var(--muted)" },
   list: { display: "flex", flexDirection: "column", gap: 6 },
   row: {
-    background: "#161b22",
-    border: "1px solid #21262d",
-    borderRadius: 8,
+    background: "var(--panel)",
+    border: "1px solid var(--border)",
+    borderRadius: "var(--radius)",
     padding: "10px 12px",
     display: "flex",
     justifyContent: "space-between",
@@ -108,6 +108,6 @@ const styles = {
   },
   rowLeft: { display: "flex", flexDirection: "column", gap: 3 },
   rowRight: { display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 3 },
-  rowSymbol: { fontSize: 12, color: "#8b949e" },
-  rowMeta: { fontSize: 11, color: "#484f58" },
+  rowSymbol: { fontSize: 12, color: "var(--muted)" },
+  rowMeta: { fontSize: 11, color: "var(--muted)" },
 };

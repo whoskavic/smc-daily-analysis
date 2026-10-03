@@ -142,10 +142,10 @@ const styles = {
     marginBottom: "40px",
   },
   sectionTitle: {
-    color: "#58a6ff",
+    color: "var(--accent)",
     marginBottom: "20px",
     fontSize: "24px",
-    borderBottom: "2px solid #58a6ff",
+    borderBottom: "2px solid var(--accent)",
     paddingBottom: "10px",
   },
   symbolSelector: {
@@ -155,24 +155,24 @@ const styles = {
     gap: "10px",
   },
   label: {
-    color: "#e6edf3",
+    color: "var(--text)",
     fontWeight: "bold",
   },
   select: {
-    background: "#161b22",
-    color: "#e6edf3",
-    border: "1px solid #30363d",
-    borderRadius: "6px",
+    background: "var(--panel)",
+    color: "var(--text)",
+    border: "1px solid var(--border)",
+    borderRadius: "var(--radius)",
     padding: "8px 12px",
     fontSize: "14px",
   },
   loading: {
-    color: "#8b949e",
+    color: "var(--muted)",
     textAlign: "center",
     padding: "20px",
   },
   empty: {
-    color: "#8b949e",
+    color: "var(--muted)",
     textAlign: "center",
     padding: "20px",
   },
@@ -182,9 +182,9 @@ const styles = {
     gap: "15px",
   },
   historyItem: {
-    background: "#161b22",
-    border: "1px solid #30363d",
-    borderRadius: "8px",
+    background: "var(--panel)",
+    border: "1px solid var(--border)",
+    borderRadius: "var(--radius)",
     padding: "15px",
   },
   historyHeader: {
@@ -194,19 +194,22 @@ const styles = {
     marginBottom: "10px",
   },
   timestamp: {
-    color: "#8b949e",
+    color: "var(--muted)",
     fontSize: "12px",
   },
   bias: {
-    color: "#58a6ff",
+    color: "var(--accent)",
     fontWeight: "bold",
   },
   direction: {
-    color: "#f85149",
+    // Pre-existing: always short-colored regardless of t.direction (not a
+    // long/short ternary in the original code) — kept as-is, this PR is
+    // visual-only and doesn't change logic.
+    color: "var(--short)",
     fontWeight: "bold",
   },
   analysisContent: {
-    color: "#e6edf3",
+    color: "var(--text)",
     lineHeight: "1.5",
   },
   summary: {
@@ -216,7 +219,7 @@ const styles = {
     marginBottom: "10px",
   },
   tradeDetails: {
-    color: "#e6edf3",
+    color: "var(--text)",
     display: "grid",
     gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
     gap: "10px",

@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
+import { tokens } from "../theme/tokens";
 
 const LEVEL_COLOR = {
   DEBUG: "\x1b[90m",   // gray
@@ -29,11 +30,28 @@ export default function TerminalConsole({ logs }) {
     const term = new Terminal({
       convertEol: true,
       fontSize: 12,
-      fontFamily: "'Cascadia Code', 'Fira Code', Menlo, Consolas, monospace",
+      fontFamily: tokens.fontMono,
       theme: {
-        background: "#0d1117",
-        foreground: "#c9d1d9",
-        cursor: "#58a6ff",
+        background: tokens.bg,
+        foreground: tokens.text2,
+        cursor: tokens.accent,
+        selectionBackground: tokens.accentBg,
+        black: tokens.bg,
+        red: tokens.short,
+        green: tokens.long,
+        yellow: tokens.warn,
+        blue: tokens.accent,
+        magenta: tokens.accent,
+        cyan: tokens.accent,
+        white: tokens.text,
+        brightBlack: tokens.muted,
+        brightRed: tokens.short,
+        brightGreen: tokens.long,
+        brightYellow: tokens.warn,
+        brightBlue: tokens.accent,
+        brightMagenta: tokens.accent,
+        brightCyan: tokens.accent,
+        brightWhite: tokens.text,
       },
       disableStdin: true,
       scrollback: 5000,
@@ -84,9 +102,9 @@ const styles = {
     display: "flex",
     flexDirection: "column",
     height: "100%",
-    background: "#0d1117",
-    border: "1px solid #21262d",
-    borderRadius: 8,
+    background: "var(--panel)",
+    border: "1px solid var(--border)",
+    borderRadius: "var(--radius)",
     overflow: "hidden",
   },
   header: {
@@ -96,15 +114,15 @@ const styles = {
     padding: "6px 12px",
     fontSize: 12,
     fontWeight: 600,
-    color: "#8b949e",
-    borderBottom: "1px solid #21262d",
-    background: "#161b22",
+    color: "var(--muted)",
+    borderBottom: "1px solid var(--border)",
+    background: "var(--panel)",
   },
   dot: {
     width: 8,
     height: 8,
     borderRadius: "50%",
-    background: "#3fb950",
+    background: "var(--long)",
   },
   term: { flex: 1, minHeight: 0, padding: "4px 8px" },
 };

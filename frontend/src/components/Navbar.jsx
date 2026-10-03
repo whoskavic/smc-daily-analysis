@@ -27,11 +27,11 @@ export default function Navbar() {
 
 const navStyle = ({ isActive }) => ({
   padding: "6px 18px",
-  borderRadius: 6,
+  borderRadius: "var(--radius)",
   fontWeight: 600,
   fontSize: 14,
-  color: isActive ? "#58a6ff" : "#8b949e",
-  borderBottom: isActive ? "2px solid #58a6ff" : "2px solid transparent",
+  color: isActive ? "var(--accent)" : "var(--muted)",
+  borderBottom: isActive ? "2px solid var(--accent)" : "2px solid transparent",
   textDecoration: "none",
   transition: "color 0.15s",
 });
@@ -42,11 +42,11 @@ const styles = {
     alignItems: "center",
     gap: 32,
     padding: "12px 24px",
-    borderBottom: "1px solid #21262d",
-    background: "#161b22",
+    borderBottom: "1px solid var(--border)",
+    background: "var(--bg)",
   },
   logo: { display: "flex", alignItems: "baseline", gap: 6 },
-  logoText: { fontSize: 22, fontWeight: 900, color: "#58a6ff", letterSpacing: 2 },
-  logoSub: { fontSize: 13, color: "#8b949e" },
+  logoText: { fontSize: 22, fontWeight: 900, color: "var(--accent)", letterSpacing: 2 },
+  logoSub: { fontSize: 13, color: "var(--muted)" },
   nav: { display: "flex", gap: 4 },
 };

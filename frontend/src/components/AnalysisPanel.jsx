@@ -26,7 +26,7 @@ export default function AnalysisPanel({ analysis, symbol, onRunAnalysis, loading
       {!analysis ? (
         <div style={styles.empty}>
           <p>No analysis yet.</p>
-          <p style={{ fontSize: 13, color: "#8b949e", marginTop: 8 }}>
+          <p style={{ fontSize: 13, color: "var(--muted)", marginTop: 8 }}>
             Click "Run Now" to trigger an analysis, or wait for the daily scheduler.
           </p>
         </div>
@@ -80,9 +80,9 @@ export default function AnalysisPanel({ analysis, symbol, onRunAnalysis, loading
 
 const styles = {
   panel: {
-    background: "#0d1117",
-    border: "1px solid #30363d",
-    borderRadius: 10,
+    background: "var(--bg)",
+    border: "1px solid var(--border)",
+    borderRadius: "var(--radius)",
     padding: 16,
     display: "flex",
     flexDirection: "column",
@@ -91,35 +91,35 @@ const styles = {
     overflowY: "auto",
   },
   topBar: { display: "flex", justifyContent: "space-between", alignItems: "center" },
-  title: { fontSize: 18, fontWeight: 700, color: "#e6edf3" },
+  title: { fontSize: 18, fontWeight: 700, color: "var(--text)" },
   btn: {
-    background: "#238636",
-    color: "#fff",
+    background: "var(--accent)",
+    color: "var(--bg)",
     border: "none",
-    borderRadius: 6,
+    borderRadius: "var(--radius)",
     padding: "6px 14px",
     cursor: "pointer",
     fontWeight: 600,
     fontSize: 13,
   },
-  empty: { color: "#8b949e", textAlign: "center", padding: "40px 0" },
-  tabs: { display: "flex", gap: 4, borderBottom: "1px solid #21262d", paddingBottom: 4 },
+  empty: { color: "var(--muted)", textAlign: "center", padding: "40px 0" },
+  tabs: { display: "flex", gap: 4, borderBottom: "1px solid var(--border)", paddingBottom: 4 },
   tab: {
     background: "none",
     border: "none",
-    color: "#8b949e",
+    color: "var(--muted)",
     cursor: "pointer",
     padding: "4px 10px",
-    borderRadius: 6,
+    borderRadius: "var(--radius)",
     fontSize: 13,
     fontWeight: 500,
   },
-  tabActive: { background: "#21262d", color: "#e6edf3" },
+  tabActive: { background: "var(--hover)", color: "var(--text)" },
   content: { flex: 1, overflowY: "auto" },
-  sectionTitle: { fontSize: 14, color: "#8b949e", marginBottom: 8, fontWeight: 600 },
+  sectionTitle: { fontSize: 14, color: "var(--muted)", marginBottom: 8, fontWeight: 600 },
   markdown: {
     fontSize: 13,
     lineHeight: 1.7,
-    color: "#c9d1d9",
+    color: "var(--text-2)",
   },
 };

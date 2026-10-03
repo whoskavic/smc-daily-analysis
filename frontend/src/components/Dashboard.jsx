@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { getBalance, getPositions, getSpotBalance, getOpenOrders } from "../api";
+import { chartPalette } from "../theme/tokens";
 
 const REFRESH_MS = 30_000;
 
@@ -14,11 +15,7 @@ const ORDER_TYPE_LABEL = {
   TRAILING_STOP_MARKET: "TRAIL",
 };
 
-const PIE_COLORS = [
-  "#58a6ff", "#3fb950", "#f0883e", "#d2a8ff",
-  "#ffa657", "#ff7b72", "#79c0ff", "#56d364",
-  "#e3b341", "#bc8cff", "#39d353", "#f85149",
-];
+const PIE_COLORS = chartPalette;
 
 function SpotPieChart({ balances }) {
   const [hovered, setHovered] = useState(null);
@@ -91,7 +88,7 @@ function SpotPieChart({ balances }) {
                 key={s.asset}
                 d={s.d}
                 fill={s.color}
-                stroke="#161b22"
+                stroke="var(--panel)"
                 strokeWidth={isHovered ? 3 : 2}
                 filter={isHovered ? "url(#slice-glow)" : undefined}
                 style={{
@@ -111,19 +108,19 @@ function SpotPieChart({ balances }) {
               <text x={cx} y={cy - 10} textAnchor="middle" fill={hoveredSlice.color} fontSize="9" fontWeight="700">
                 {hoveredSlice.asset.length > 9 ? hoveredSlice.asset.slice(0, 9) + "…" : hoveredSlice.asset}
               </text>
-              <text x={cx} y={cy + 5} textAnchor="middle" fill="#e6edf3" fontSize="13" fontWeight="900">
+              <text x={cx} y={cy + 5} textAnchor="middle" fill="var(--text)" fontSize="13" fontWeight="900">
                 {(hoveredSlice.pct * 100).toFixed(1)}%
               </text>
-              <text x={cx} y={cy + 18} textAnchor="middle" fill="#8b949e" fontSize="9">
+              <text x={cx} y={cy + 18} textAnchor="middle" fill="var(--muted)" fontSize="9">
                 ${fmt(hoveredSlice.usd_value)}
               </text>
             </>
           ) : (
             <>
-              <text x={cx} y={cy - 5} textAnchor="middle" fill="#8b949e" fontSize="10" fontWeight="600">
+              <text x={cx} y={cy - 5} textAnchor="middle" fill="var(--muted)" fontSize="10" fontWeight="600">
                 TOTAL
               </text>
-              <text x={cx} y={cy + 10} textAnchor="middle" fill="#3fb950" fontSize="11" fontWeight="700">
+              <text x={cx} y={cy + 10} textAnchor="middle" fill="var(--long)" fontSize="11" fontWeight="700">
                 ${fmt(total, 0)}
               </text>
             </>
@@ -152,10 +149,10 @@ function SpotPieChart({ balances }) {
                 boxShadow: isHovered ? `0 0 6px ${s.color}` : "none",
                 transition: "box-shadow 0.15s",
               }} />
-              <span style={{ color: isHovered ? "#e6edf3" : "#8b949e", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", transition: "color 0.15s" }}>
+              <span style={{ color: isHovered ? "var(--text)" : "var(--muted)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", transition: "color 0.15s" }}>
                 {s.asset}
               </span>
-              <span style={{ color: isHovered ? s.color : "#e6edf3", fontFamily: "monospace", fontWeight: 700, transition: "color 0.15s" }}>
+              <span style={{ color: isHovered ? s.color : "var(--text)", fontFamily: "var(--font-mono)", fontWeight: 700, transition: "color 0.15s" }}>
                 {(s.pct * 100).toFixed(1)}%
               </span>
             </div>
@@ -241,7 +238,7 @@ export default function Dashboard() {
                 <span style={styles.balanceLabel}>Unrealized PnL</span>
                 <span style={{
                   ...styles.balanceValue,
-                  color: futuresBalance.unrealized_pnl >= 0 ? "#3fb950" : "#f85149",
+                  color: futuresBalance.unrealized_pnl >= 0 ? "var(--long)" : "var(--short)",
                   fontWeight: 700,
                 }}>
                   {futuresBalance.unrealized_pnl >= 0 ? "+" : ""}${fmt(futuresBalance.unrealized_pnl)} USDT
@@ -258,7 +255,7 @@ export default function Dashboard() {
           <div style={styles.cardTitle}>
             💰 Spot Wallet
             {spotBalance && (
-              <span style={{ marginLeft: "auto", fontSize: 13, color: "#3fb950", fontWeight: 700 }}>
+              <span style={{ marginLeft: "auto", fontSize: 13, color: "var(--long)", fontWeight: 700 }}>
                 ≈ ${fmt(spotBalance.total_usd)} USDT
               </span>
             )}
@@ -281,17 +278,17 @@ export default function Dashboard() {
                     </thead>
                     <tbody>
                       {spotBalance.balances.map((b, i) => (
-                        <tr key={b.asset} style={i % 2 === 0 ? styles.trEven : styles.trOdd}>
-                          <td style={{ ...styles.td, fontWeight: 700, color: "#e6edf3" }}>{b.asset}</td>
+                        <tr key={b.asset} className="tr-hover" style={i % 2 === 0 ? styles.trEven : styles.trOdd}>
+                          <td style={{ ...styles.td, fontWeight: 700, color: "var(--text)" }}>{b.asset}</td>
                           <td style={styles.td}>{fmt(b.free, 6)}</td>
-                          <td style={{ ...styles.td, color: b.locked > 0 ? "#e3b341" : "#8b949e" }}>
+                          <td style={{ ...styles.td, color: b.locked > 0 ? "var(--warn)" : "var(--muted)" }}>
                             {fmt(b.locked, 6)}
                           </td>
                           <td style={styles.td}>{fmt(b.total, 6)}</td>
-                          <td style={{ ...styles.td, color: "#8b949e" }}>
+                          <td style={{ ...styles.td, color: "var(--muted)" }}>
                             {b.usd_price != null ? `$${fmt(b.usd_price)}` : "—"}
                           </td>
-                          <td style={{ ...styles.td, fontWeight: 700, color: "#3fb950" }}>
+                          <td style={{ ...styles.td, fontWeight: 700, color: "var(--long)" }}>
                             {b.usd_value != null ? `$${fmt(b.usd_value)}` : "—"}
                           </td>
                         </tr>
@@ -301,7 +298,7 @@ export default function Dashboard() {
                 </div>
 
                 {/* Pie chart */}
-                <div style={{ flexShrink: 0, borderLeft: "1px solid #21262d", paddingLeft: 20 }}>
+                <div style={{ flexShrink: 0, borderLeft: "1px solid var(--border)", paddingLeft: 20 }}>
                   <SpotPieChart balances={spotBalance.balances} />
                 </div>
               </div>
@@ -332,13 +329,13 @@ export default function Dashboard() {
               </thead>
               <tbody>
                 {positions.map((p, i) => (
-                  <tr key={i} style={i % 2 === 0 ? styles.trEven : styles.trOdd}>
+                  <tr key={i} className="tr-hover" style={i % 2 === 0 ? styles.trEven : styles.trOdd}>
                     <td style={styles.td}>{p.symbol}</td>
                     <td style={styles.td}>
                       <span style={{
                         ...styles.sideBadge,
-                        background: p.side === "LONG" ? "#1a3a2a" : "#3a1a1a",
-                        color: p.side === "LONG" ? "#3fb950" : "#f85149",
+                        background: p.side === "LONG" ? "var(--long-bg)" : "var(--short-bg)",
+                        color: p.side === "LONG" ? "var(--long)" : "var(--short)",
                       }}>
                         {p.side}
                       </span>
@@ -350,7 +347,7 @@ export default function Dashboard() {
                     <td style={styles.td}>{p.leverage}x</td>
                     <td style={{
                       ...styles.td,
-                      color: p.unrealized_pnl >= 0 ? "#3fb950" : "#f85149",
+                      color: p.unrealized_pnl >= 0 ? "var(--long)" : "var(--short)",
                       fontWeight: 700,
                     }}>
                       {p.unrealized_pnl >= 0 ? "+" : ""}${fmt(p.unrealized_pnl)}
@@ -390,27 +387,27 @@ export default function Dashboard() {
                     ? ((o.executed_qty / o.orig_qty) * 100).toFixed(0)
                     : 0;
                   return (
-                    <tr key={o.order_id} style={i % 2 === 0 ? styles.trEven : styles.trOdd}>
-                      <td style={{ ...styles.td, fontWeight: 700, color: "#e6edf3" }}>{o.symbol}</td>
+                    <tr key={o.order_id} className="tr-hover" style={i % 2 === 0 ? styles.trEven : styles.trOdd}>
+                      <td style={{ ...styles.td, fontWeight: 700, color: "var(--text)" }}>{o.symbol}</td>
                       <td style={styles.td}>
                         <span style={{
                           ...styles.sideBadge,
-                          background: isBuy ? "#1a3a2a" : "#3a1a1a",
-                          color: isBuy ? "#3fb950" : "#f85149",
+                          background: isBuy ? "var(--long-bg)" : "var(--short-bg)",
+                          color: isBuy ? "var(--long)" : "var(--short)",
                         }}>
                           {o.side}
                         </span>
                       </td>
-                      <td style={{ ...styles.td, color: "#8b949e" }}>
+                      <td style={{ ...styles.td, color: "var(--muted)" }}>
                         {ORDER_TYPE_LABEL[o.type] || o.type}
                       </td>
                       <td style={styles.td}>${fmt(displayPrice)}</td>
                       <td style={styles.td}>{fmt(o.orig_qty, 4)}</td>
-                      <td style={{ ...styles.td, color: "#8b949e" }}>
+                      <td style={{ ...styles.td, color: "var(--muted)" }}>
                         {fmt(o.executed_qty, 4)} <span style={{ fontSize: 11 }}>({filledPct}%)</span>
                       </td>
-                      <td style={{ ...styles.td, color: "#8b949e" }}>{o.position_side}</td>
-                      <td style={{ ...styles.td, color: o.reduce_only ? "#e3b341" : "#8b949e" }}>
+                      <td style={{ ...styles.td, color: "var(--muted)" }}>{o.position_side}</td>
+                      <td style={{ ...styles.td, color: o.reduce_only ? "var(--warn)" : "var(--muted)" }}>
                         {o.reduce_only ? "Yes" : "No"}
                       </td>
                     </tr>
@@ -428,45 +425,45 @@ export default function Dashboard() {
 const styles = {
   page: { padding: 24, maxWidth: 1400, margin: "0 auto", width: "100%", boxSizing: "border-box" },
   topBar: { display: "flex", alignItems: "center", gap: 16, marginBottom: 24 },
-  title: { margin: 0, fontSize: 22, fontWeight: 700, color: "#e6edf3" },
-  updated: { fontSize: 12, color: "#8b949e", marginLeft: "auto" },
+  title: { margin: 0, fontSize: 22, fontWeight: 700, color: "var(--text)" },
+  updated: { fontSize: 12, color: "var(--muted)", marginLeft: "auto" },
   refreshBtn: {
-    padding: "6px 14px", borderRadius: 6, border: "1px solid #30363d",
-    background: "#21262d", color: "#e6edf3", cursor: "pointer", fontSize: 13,
+    padding: "6px 14px", borderRadius: "var(--radius)", border: "1px solid var(--border)",
+    background: "var(--hover)", color: "var(--text)", cursor: "pointer", fontSize: 13,
   },
   walletRow: { display: "flex", gap: 16, alignItems: "start", flexWrap: "wrap" },
   card: {
-    background: "#161b22", border: "1px solid #21262d",
-    borderRadius: 10, padding: 20, flex: 1, minWidth: 280,
+    background: "var(--panel)", border: "1px solid var(--border)",
+    borderRadius: "var(--radius)", padding: 20, flex: 1, minWidth: 280,
   },
   cardTitle: {
-    fontSize: 12, fontWeight: 700, color: "#8b949e", textTransform: "uppercase",
+    fontSize: 12, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase",
     letterSpacing: 1, marginBottom: 16, display: "flex", alignItems: "center", gap: 8,
   },
-  cardError: { color: "#f85149", fontSize: 13, marginBottom: 8 },
+  cardError: { color: "var(--short)", fontSize: 13, marginBottom: 8 },
   badge: {
-    background: "#21262d", color: "#58a6ff", borderRadius: 12,
+    background: "var(--hover)", color: "var(--accent)", borderRadius: 12,
     padding: "1px 8px", fontSize: 12,
   },
   balanceBody: { display: "flex", flexDirection: "column", gap: 14 },
   balanceMain: { display: "flex", alignItems: "baseline", gap: 8 },
-  balanceAmount: { fontSize: 28, fontWeight: 900, color: "#e6edf3", fontFamily: "monospace" },
-  balanceAsset: { fontSize: 14, color: "#8b949e" },
+  balanceAmount: { fontSize: 28, fontWeight: 900, color: "var(--text)", fontFamily: "var(--font-mono)" },
+  balanceAsset: { fontSize: 14, color: "var(--muted)" },
   balanceRow: { display: "flex", justifyContent: "space-between", alignItems: "center" },
-  balanceLabel: { fontSize: 13, color: "#8b949e" },
-  balanceValue: { fontSize: 14, fontWeight: 600, color: "#e6edf3", fontFamily: "monospace" },
-  empty: { color: "#8b949e", fontSize: 14, padding: "8px 0" },
+  balanceLabel: { fontSize: 13, color: "var(--muted)" },
+  balanceValue: { fontSize: 14, fontWeight: 600, color: "var(--text)", fontFamily: "var(--font-mono)" },
+  empty: { color: "var(--muted)", fontSize: 14, padding: "8px 0" },
   tableWrap: { overflowX: "auto" },
   table: { width: "100%", borderCollapse: "collapse", fontSize: 13 },
   th: {
-    textAlign: "left", padding: "8px 12px", color: "#8b949e",
-    borderBottom: "1px solid #21262d", fontWeight: 600, whiteSpace: "nowrap",
+    textAlign: "left", padding: "8px 12px", color: "var(--muted)", textTransform: "uppercase",
+    borderBottom: "1px solid var(--border)", fontWeight: 600, whiteSpace: "nowrap",
   },
-  td: { padding: "10px 12px", borderBottom: "1px solid #21262d", fontFamily: "monospace", color: "#e6edf3" },
+  td: { padding: "10px 12px", borderBottom: "1px solid var(--border)", fontFamily: "var(--font-mono)", color: "var(--text)" },
   trEven: { background: "transparent" },
-  trOdd: { background: "#0d1117" },
+  trOdd: { background: "var(--bg)" },
   sideBadge: {
-    display: "inline-block", padding: "2px 10px", borderRadius: 4,
+    display: "inline-block", padding: "2px 10px", borderRadius: "var(--radius-sm)",
     fontSize: 12, fontWeight: 700, letterSpacing: 0.5,
   },
 };

@@ -20,9 +20,9 @@ export default function SymbolSelector({ symbols, selected, onChange }) {
 const styles = {
   container: { display: "flex", gap: 8, flexWrap: "wrap" },
   btn: {
-    background: "#161b22",
-    border: "1px solid #30363d",
-    color: "#8b949e",
+    background: "var(--panel)",
+    border: "1px solid var(--border)",
+    color: "var(--muted)",
     borderRadius: 20,
     padding: "4px 14px",
     cursor: "pointer",
@@ -31,8 +31,8 @@ const styles = {
     transition: "all 0.15s",
   },
   active: {
-    background: "#1f6feb",
-    border: "1px solid #1f6feb",
-    color: "#fff",
+    background: "var(--accent)",
+    border: "1px solid var(--accent)",
+    color: "var(--bg)",
   },
 };
