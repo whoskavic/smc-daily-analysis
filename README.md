@@ -19,6 +19,7 @@ Daily crypto trading analysis powered by **Binance market data** + **Claude AI**
 ```bash
 cd backend
 python -m venv .venv && source .venv/bin/activate
+# Windows (PowerShell): python -m venv .venv; .venv\Scripts\activate
 pip install -r requirements.txt
 
 cp ../.env.example ../.env
@@ -26,6 +27,23 @@ cp ../.env.example ../.env
 
 uvicorn app.main:app --reload --port 8000
 ```
+
+#### Windows: DNS timeout (aiodns)
+
+- **Symptom**: ccxt raises `RequestTimeout` with no response body; `/api/trading/balance`
+  comes back with everything at 0 and the log has `[Executor] fetch_balance failed ...`.
+- **Cause**: `aiodns` (pulled in by ccxt) makes aiohttp use c-ares for DNS, which can
+  time out contacting DNS servers on Windows, even though the system resolver works fine.
+- **Fix** (run inside the venv, repeat every time after `pip install -r requirements.txt`):
+  ```powershell
+  pip uninstall -y aiodns
+  ```
+- **Verify** (PowerShell, from `backend/`, venv active):
+  ```powershell
+  python -c "import aiohttp.resolver as r; print(r.DefaultResolver.__name__)"
+  ```
+  Should print `ThreadedResolver`.
+- Docker/Linux is not affected — skip this on those platforms.
 
 ### 2. Frontend
 
